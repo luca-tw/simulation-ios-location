@@ -234,6 +234,7 @@ WEB_PAGE_HTML = """<!doctype html>
         .btn.secondary { background:#334155; }
         .coord { display:flex; gap:8px; align-items:center; }
         .coord input { width:140px; border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
+        .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
         #map { flex:1; }
         .hint { position:absolute; right:12px; bottom:12px; z-index:500; background:rgba(16,33,54,.88); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; }
     </style>
@@ -245,6 +246,10 @@ WEB_PAGE_HTML = """<!doctype html>
             <div class=\"coord\">
                 <input id=\"latInput\" type=\"number\" step=\"any\" placeholder=\"緯度 Lat\" />
                 <input id=\"lngInput\" type=\"number\" step=\"any\" placeholder=\"經度 Lng\" />
+                <select id=\"moveMode\">
+                    <option value=\"instant\">即時傳送</option>
+                    <option value=\"smooth\">平滑移動</option>
+                </select>
                 <button id=\"applyBtn\" class=\"btn\">套用座標</button>
             </div>
             <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
@@ -262,6 +267,7 @@ WEB_PAGE_HTML = """<!doctype html>
         const sessionText = document.getElementById('sessionText');
         const latInput = document.getElementById('latInput');
         const lngInput = document.getElementById('lngInput');
+        const moveModeEl = document.getElementById('moveMode');
         const map = L.map('map', { zoomControl: true }).setView([25.033964, 121.564468], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
@@ -276,6 +282,7 @@ WEB_PAGE_HTML = """<!doctype html>
         const STEP_METERS = SPEED_MPS * (KEY_TICK_MS / 1000);
         const pressed = new Set();
         let moveTimer = null;
+        let smoothTarget = null;
 
         function setStatus(text, warn = false) {
             statusEl.textContent = text;
@@ -353,9 +360,23 @@ WEB_PAGE_HTML = """<!doctype html>
             }
         }
 
+        function startSmoothMoveTo(lat, lng) {
+            smoothTarget = clampLatLng(lat, lng);
+            startMoveTimer();
+        }
+
+        async function moveByMode(lat, lng) {
+            if (moveModeEl.value === 'smooth') {
+                startSmoothMoveTo(lat, lng);
+                return;
+            }
+            smoothTarget = null;
+            await sendLocation(lat, lng);
+        }
+
         map.on('click', (e) => {
             const { lat, lng } = e.latlng;
-            sendLocation(lat, lng);
+            moveByMode(lat, lng);
         });
 
         document.getElementById('applyBtn').addEventListener('click', async () => {
@@ -370,7 +391,7 @@ WEB_PAGE_HTML = """<!doctype html>
                 return;
             }
             map.panTo([lat, lng]);
-            await sendLocation(lat, lng);
+            await moveByMode(lat, lng);
         });
 
         function currentLatLng() {
@@ -387,26 +408,54 @@ WEB_PAGE_HTML = """<!doctype html>
         }
 
         async function tickMove() {
-            if (pressed.size === 0) return;
             const now = currentLatLng();
             let nextLat = now.lat;
             let nextLng = now.lng;
+            let moved = false;
             const latStep = metersToLatDelta(STEP_METERS);
             const lngStep = metersToLngDelta(STEP_METERS, now.lat);
 
             const y = (pressed.has('w') ? 1 : 0) - (pressed.has('s') ? 1 : 0);
             const x = (pressed.has('d') ? 1 : 0) - (pressed.has('a') ? 1 : 0);
             const mag = Math.hypot(x, y);
-            if (mag === 0) return;
-            const nx = x / mag;
-            const ny = y / mag;
+            if (mag > 0) {
+                const nx = x / mag;
+                const ny = y / mag;
+                nextLat += ny * latStep;
+                nextLng += nx * lngStep;
+                moved = true;
+                smoothTarget = null;
+            } else if (smoothTarget) {
+                const dyMeters = (smoothTarget.lat - now.lat) * 111320;
+                const dxMeters = (smoothTarget.lng - now.lng) * 111320 * Math.cos((now.lat * Math.PI) / 180);
+                const dist = Math.hypot(dxMeters, dyMeters);
 
-            nextLat += ny * latStep;
-            nextLng += nx * lngStep;
+                if (dist <= STEP_METERS) {
+                    nextLat = smoothTarget.lat;
+                    nextLng = smoothTarget.lng;
+                    smoothTarget = null;
+                    moved = true;
+                } else {
+                    const nx = dxMeters / dist;
+                    const ny = dyMeters / dist;
+                    nextLat += metersToLatDelta(ny * STEP_METERS);
+                    nextLng += metersToLngDelta(nx * STEP_METERS, now.lat);
+                    moved = true;
+                }
+            }
+
+            if (!moved) {
+                stopMoveTimerIfIdle();
+                return;
+            }
 
             const clamped = clampLatLng(nextLat, nextLng);
             map.panTo([clamped.lat, clamped.lng], { animate: false });
             await sendLocation(clamped.lat, clamped.lng);
+
+            if (pressed.size === 0 && !smoothTarget) {
+                stopMoveTimerIfIdle();
+            }
         }
 
         function shouldIgnoreKeyEvent(evt) {
@@ -422,7 +471,7 @@ WEB_PAGE_HTML = """<!doctype html>
         }
 
         function stopMoveTimerIfIdle() {
-            if (pressed.size === 0 && moveTimer) {
+            if (pressed.size === 0 && !smoothTarget && moveTimer) {
                 clearInterval(moveTimer);
                 moveTimer = null;
             }
@@ -449,12 +498,20 @@ WEB_PAGE_HTML = """<!doctype html>
             stopMoveTimerIfIdle();
         });
 
+        moveModeEl.addEventListener('change', () => {
+            if (moveModeEl.value === 'instant') {
+                smoothTarget = null;
+            }
+            setStatus(`模式: ${moveModeEl.value === 'smooth' ? '平滑移動' : '即時傳送'}，速度上限 ${SPEED_KMH} km/h`);
+        });
+
         setInputs(25.033964, 121.564468);
-        setStatus(`點地圖、輸入座標，或用 WASD 控制移動 (最高 ${SPEED_KMH} km/h)`);
+        setStatus(`模式: 即時傳送，速度上限 ${SPEED_KMH} km/h`);
 
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (busy) return;
             busy = true;
+            smoothTarget = null;
             setStatus('正在恢復真實位置...');
             try {
                 const res = await fetch('/api/clear-location', { method: 'POST' });
