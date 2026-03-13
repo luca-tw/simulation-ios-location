@@ -377,6 +377,9 @@ WEB_PAGE_HTML = """<!doctype html>
         .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
         .coord .fav-select { width:180px; }
         .coord .route-select { width:190px; }
+        .manage-item { display:none; }
+        .top.manage-open .manage-item { display:inline-flex; }
+        .top.manage-open select.manage-item { display:inline-block; }
         .tools { display:flex; gap:8px; align-items:center; }
         .btn.tool { background:#1f2937; }
         .btn.tool.active { background:#b45309; }
@@ -386,7 +389,7 @@ WEB_PAGE_HTML = """<!doctype html>
 </head>
 <body>
     <div class=\"wrap\">
-        <div class=\"top\">
+        <div class=\"top\" id=\"topBar\">
             <div class=\"title\">iOS 即時定位</div>
             <div class=\"coord\">
                 <input id=\"latInput\" type=\"number\" step=\"any\" placeholder=\"緯度 Lat\" />
@@ -396,24 +399,24 @@ WEB_PAGE_HTML = """<!doctype html>
                     <option value=\"smooth\">平滑移動</option>
                 </select>
                 <button id=\"applyBtn\" class=\"btn\">套用座標</button>
-                <select id="favoriteSelect" class="fav-select">
+                <button id=\"toggleManageBtn\" class=\"btn secondary\">更多功能</button>
+                <select id="favoriteSelect" class="fav-select manage-item">
                     <option value="">收藏地點</option>
                 </select>
-                <button id="saveFavoriteBtn" class="btn secondary">收藏目前點</button>
-                <button id="goFavoriteBtn" class="btn secondary">前往收藏</button>
-                <button id="deleteFavoriteBtn" class="btn secondary">刪除收藏</button>
-                <select id="routePresetSelect" class="route-select">
+                <button id="saveFavoriteBtn" class="btn secondary manage-item">收藏目前點</button>
+                <button id="goFavoriteBtn" class="btn secondary manage-item">前往收藏</button>
+                <button id="deleteFavoriteBtn" class="btn secondary manage-item">刪除收藏</button>
+                <select id="routePresetSelect" class="route-select manage-item">
                     <option value="">已存路徑</option>
                 </select>
-                <button id="saveRouteBtn" class="btn secondary">儲存路徑</button>
-                <button id="loadRouteBtn" class="btn secondary">載入路徑</button>
-                <button id="deleteRouteBtn" class="btn secondary">刪除路徑</button>
+                <button id="saveRouteBtn" class="btn secondary manage-item">儲存路徑</button>
+                <button id="loadRouteBtn" class="btn secondary manage-item">載入路徑</button>
+                <button id="deleteRouteBtn" class="btn secondary manage-item">刪除路徑</button>
             </div>
             <div class=\"tools\">
                 <button id=\"drawRouteBtn\" class=\"btn tool\">畫路徑</button>
                 <button id=\"clearRouteBtn\" class=\"btn tool\">清空路徑</button>
                 <button id=\"playRouteBtn\" class=\"btn tool\">播放路徑</button>
-                <button id=\"stopRouteBtn\" class=\"btn tool\">停止播放</button>
                 <button id=\"importGpxBtn\" class=\"btn tool\">匯入 GPX</button>
                 <button id=\"exportGpxBtn\" class=\"btn tool\">匯出 GPX</button>
                 <input id=\"gpxFileInput\" type=\"file\" accept=\".gpx,application/gpx+xml,text/xml,application/xml\" style=\"display:none\" />
@@ -434,10 +437,11 @@ WEB_PAGE_HTML = """<!doctype html>
         const latInput = document.getElementById('latInput');
         const lngInput = document.getElementById('lngInput');
         const moveModeEl = document.getElementById('moveMode');
+        const topBar = document.getElementById('topBar');
+        const toggleManageBtn = document.getElementById('toggleManageBtn');
         const drawRouteBtn = document.getElementById('drawRouteBtn');
         const clearRouteBtn = document.getElementById('clearRouteBtn');
         const playRouteBtn = document.getElementById('playRouteBtn');
-        const stopRouteBtn = document.getElementById('stopRouteBtn');
         const favoriteSelect = document.getElementById('favoriteSelect');
         const saveFavoriteBtn = document.getElementById('saveFavoriteBtn');
         const goFavoriteBtn = document.getElementById('goFavoriteBtn');
@@ -785,7 +789,7 @@ WEB_PAGE_HTML = """<!doctype html>
 
         function updatePlaybackButtons() {
             playRouteBtn.classList.toggle('active', routePlaybackActive);
-            playRouteBtn.textContent = routePlaybackActive ? '播放中...' : '播放路徑';
+            playRouteBtn.textContent = routePlaybackActive ? '暫停路徑' : '播放路徑';
         }
 
         function updateRouteVisuals() {
@@ -1084,12 +1088,17 @@ WEB_PAGE_HTML = """<!doctype html>
         });
 
         playRouteBtn.addEventListener('click', () => {
+            if (routePlaybackActive) {
+                stopRoutePlayback();
+                clearSmoothVisuals();
+                return;
+            }
             startRoutePlayback();
         });
 
-        stopRouteBtn.addEventListener('click', () => {
-            stopRoutePlayback();
-            clearSmoothVisuals();
+        toggleManageBtn.addEventListener('click', () => {
+            topBar.classList.toggle('manage-open');
+            toggleManageBtn.textContent = topBar.classList.contains('manage-open') ? '收合功能' : '更多功能';
         });
 
         exportGpxBtn.addEventListener('click', () => {
