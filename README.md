@@ -26,5 +26,8 @@ MacOS (通常需要 sudo 權限來存取 USB)：
 python3 -m venv venv
 
 source venv/bin/activate
+pip install -r requirements.txt
 
-sudo python3 simple_location.py --lat 24.9766463 --lng 121.529733
+sudo python3 main.py  
+
+deactivate
