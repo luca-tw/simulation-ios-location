@@ -7,6 +7,7 @@ import traceback
 import threading
 import queue
 import atexit
+import json
 from pymobiledevice3.usbmux import list_devices
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
@@ -82,6 +83,110 @@ logger = logging.getLogger(__name__)
 
 _web_action_lock = threading.Lock()
 _web_location_set = False
+_settings_lock = threading.Lock()
+
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "web_map_state.json")
+
+
+def _default_settings() -> dict:
+    return {
+        "map": {
+            "center": {"lat": 25.033964, "lng": 121.564468},
+            "zoom": 12,
+        },
+        "last_position": None,
+        "favorites": [],
+    }
+
+
+def _sanitize_settings(raw: dict) -> dict:
+    settings = _default_settings()
+    if not isinstance(raw, dict):
+        return settings
+
+    map_data = raw.get("map")
+    if isinstance(map_data, dict):
+        center = map_data.get("center")
+        zoom = map_data.get("zoom")
+        if isinstance(center, dict):
+            try:
+                lat = float(center.get("lat"))
+                lng = float(center.get("lng"))
+                if -90 <= lat <= 90 and -180 <= lng <= 180:
+                    settings["map"]["center"] = {"lat": lat, "lng": lng}
+            except (TypeError, ValueError):
+                pass
+        try:
+            zoom_val = int(zoom)
+            settings["map"]["zoom"] = max(1, min(20, zoom_val))
+        except (TypeError, ValueError):
+            pass
+
+    last_position = raw.get("last_position")
+    if isinstance(last_position, dict):
+        try:
+            lat = float(last_position.get("lat"))
+            lng = float(last_position.get("lng"))
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                settings["last_position"] = {"lat": lat, "lng": lng}
+        except (TypeError, ValueError):
+            pass
+
+    favorites = raw.get("favorites")
+    if isinstance(favorites, list):
+        cleaned = []
+        for item in favorites:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            if not name:
+                continue
+            try:
+                lat = float(item.get("lat"))
+                lng = float(item.get("lng"))
+            except (TypeError, ValueError):
+                continue
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                cleaned.append({"name": name[:64], "lat": lat, "lng": lng})
+        settings["favorites"] = cleaned[:100]
+
+    return settings
+
+
+def _load_settings() -> dict:
+    with _settings_lock:
+        if not os.path.exists(SETTINGS_FILE):
+            return _default_settings()
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return _sanitize_settings(data)
+        except Exception as e:
+            logger.warning(f"讀取設定檔失敗，改用預設值: {e}")
+            return _default_settings()
+
+
+def _save_settings(settings: dict) -> dict:
+    cleaned = _sanitize_settings(settings)
+    with _settings_lock:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(cleaned, f, ensure_ascii=False, indent=2)
+    return cleaned
+
+
+def _merge_settings(update: dict) -> dict:
+    current = _load_settings()
+    if not isinstance(update, dict):
+        return current
+
+    if "map" in update and isinstance(update["map"], dict):
+        current["map"] = update["map"]
+    if "last_position" in update:
+        current["last_position"] = update["last_position"]
+    if "favorites" in update and isinstance(update["favorites"], list):
+        current["favorites"] = update["favorites"]
+
+    return _save_settings(current)
 
 
 class PersistentLocationSession:
@@ -235,6 +340,7 @@ WEB_PAGE_HTML = """<!doctype html>
         .coord { display:flex; gap:8px; align-items:center; }
         .coord input { width:140px; border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
         .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
+        .coord .fav-select { width:180px; }
         .tools { display:flex; gap:8px; align-items:center; }
         .btn.tool { background:#1f2937; }
         .btn.tool.active { background:#b45309; }
@@ -254,6 +360,12 @@ WEB_PAGE_HTML = """<!doctype html>
                     <option value=\"smooth\">平滑移動</option>
                 </select>
                 <button id=\"applyBtn\" class=\"btn\">套用座標</button>
+                <select id="favoriteSelect" class="fav-select">
+                    <option value="">收藏地點</option>
+                </select>
+                <button id="saveFavoriteBtn" class="btn secondary">收藏目前點</button>
+                <button id="goFavoriteBtn" class="btn secondary">前往收藏</button>
+                <button id="deleteFavoriteBtn" class="btn secondary">刪除收藏</button>
             </div>
             <div class=\"tools\">
                 <button id=\"drawRouteBtn\" class=\"btn tool\">畫路徑</button>
@@ -284,6 +396,10 @@ WEB_PAGE_HTML = """<!doctype html>
         const clearRouteBtn = document.getElementById('clearRouteBtn');
         const playRouteBtn = document.getElementById('playRouteBtn');
         const stopRouteBtn = document.getElementById('stopRouteBtn');
+        const favoriteSelect = document.getElementById('favoriteSelect');
+        const saveFavoriteBtn = document.getElementById('saveFavoriteBtn');
+        const goFavoriteBtn = document.getElementById('goFavoriteBtn');
+        const deleteFavoriteBtn = document.getElementById('deleteFavoriteBtn');
         const importGpxBtn = document.getElementById('importGpxBtn');
         const exportGpxBtn = document.getElementById('exportGpxBtn');
         const gpxFileInput = document.getElementById('gpxFileInput');
@@ -310,6 +426,8 @@ WEB_PAGE_HTML = """<!doctype html>
         let routeLine = null;
         let routePlaybackActive = false;
         let routePlaybackIndex = 0;
+        let appSettings = { map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 }, last_position: null, favorites: [] };
+        let settingsSaveTimer = null;
 
         function setStatus(text, warn = false) {
             statusEl.textContent = text;
@@ -336,6 +454,139 @@ WEB_PAGE_HTML = """<!doctype html>
             } catch (err) {
                 setSessionState(false, false);
             }
+        }
+
+        function getMapState() {
+            const center = map.getCenter();
+            return {
+                center: clampLatLng(center.lat, center.lng),
+                zoom: Math.max(1, Math.min(20, map.getZoom())),
+            };
+        }
+
+        function renderFavorites() {
+            const prev = favoriteSelect.value;
+            favoriteSelect.innerHTML = '<option value="">收藏地點</option>';
+            appSettings.favorites.forEach((fav, idx) => {
+                const option = document.createElement('option');
+                option.value = String(idx);
+                option.textContent = `${fav.name} (${fav.lat.toFixed(4)}, ${fav.lng.toFixed(4)})`;
+                favoriteSelect.appendChild(option);
+            });
+            if (prev && Number(prev) < appSettings.favorites.length) {
+                favoriteSelect.value = prev;
+            }
+        }
+
+        async function saveSettingsPartial(partial) {
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(partial),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'settings save error');
+                if (data.settings) {
+                    appSettings = data.settings;
+                    renderFavorites();
+                }
+            } catch (err) {
+                console.warn('save settings failed', err);
+            }
+        }
+
+        function flushSettingsOnLeave() {
+            const payload = {
+                map: getMapState(),
+                last_position: currentLatLng(),
+                favorites: appSettings.favorites,
+            };
+
+            try {
+                const body = JSON.stringify(payload);
+                if (navigator.sendBeacon) {
+                    const blob = new Blob([body], { type: 'application/json' });
+                    navigator.sendBeacon('/api/settings', blob);
+                    return;
+                }
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body,
+                    keepalive: true,
+                });
+            } catch (err) {
+                console.warn('flush settings failed', err);
+            }
+        }
+
+        function scheduleSaveMapState() {
+            if (settingsSaveTimer) {
+                clearTimeout(settingsSaveTimer);
+            }
+            settingsSaveTimer = setTimeout(() => {
+                settingsSaveTimer = null;
+                saveSettingsPartial({ map: getMapState() });
+            }, 350);
+        }
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/settings');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'settings load error');
+                appSettings = data;
+                renderFavorites();
+
+                if (appSettings.map && appSettings.map.center) {
+                    const center = appSettings.map.center;
+                    const zoom = Number(appSettings.map.zoom || 12);
+                    map.setView([center.lat, center.lng], Math.max(1, Math.min(20, zoom)), { animate: false });
+                    setInputs(center.lat, center.lng);
+                }
+
+                if (appSettings.last_position) {
+                    const p = appSettings.last_position;
+                    if (!marker) marker = L.marker([p.lat, p.lng]).addTo(map);
+                    marker.setLatLng([p.lat, p.lng]);
+                }
+                return Boolean(data._persisted);
+            } catch (err) {
+                setStatus(`讀取設定失敗，使用預設值`, true);
+                return false;
+            }
+        }
+
+        function upsertFavorite(name, lat, lng) {
+            const normalized = String(name || '').trim();
+            if (!normalized) {
+                setStatus('收藏名稱不可為空', true);
+                return;
+            }
+            const clamped = clampLatLng(lat, lng);
+            const idx = appSettings.favorites.findIndex((f) => f.name === normalized);
+            if (idx >= 0) {
+                appSettings.favorites[idx] = { name: normalized, lat: clamped.lat, lng: clamped.lng };
+            } else {
+                appSettings.favorites.push({ name: normalized, lat: clamped.lat, lng: clamped.lng });
+            }
+            renderFavorites();
+            saveSettingsPartial({ favorites: appSettings.favorites });
+            setStatus(`已收藏地點: ${normalized}`);
+        }
+
+        function deleteSelectedFavorite() {
+            const idx = Number(favoriteSelect.value);
+            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.favorites.length) {
+                setStatus('請先選擇要刪除的收藏地點', true);
+                return;
+            }
+            const name = appSettings.favorites[idx].name;
+            appSettings.favorites.splice(idx, 1);
+            renderFavorites();
+            saveSettingsPartial({ favorites: appSettings.favorites });
+            setStatus(`已刪除收藏地點: ${name}`);
         }
 
         function metersToLatDelta(meters) {
@@ -381,6 +632,7 @@ WEB_PAGE_HTML = """<!doctype html>
                     const lat = pos.coords.latitude;
                     const lng = pos.coords.longitude;
                     setInitialView(lat, lng);
+                    scheduleSaveMapState();
                     setStatus(`已使用網頁 GPS 作為初始位置: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
                 },
                 (err) => {
@@ -585,7 +837,10 @@ WEB_PAGE_HTML = """<!doctype html>
                 if (!res.ok) throw new Error(data.error || '設定失敗');
 
                 applyLocalPosition(lat, lng);
+                appSettings.last_position = { lat, lng };
                 if (!silent) {
+                    scheduleSaveMapState();
+                    saveSettingsPartial({ last_position: { lat, lng } });
                     setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)} (WASD 最高 ${SPEED_KMH} km/h)`);
                     await refreshSessionStatus();
                 }
@@ -642,6 +897,29 @@ WEB_PAGE_HTML = """<!doctype html>
             }
             map.panTo([lat, lng]);
             await moveByMode(lat, lng);
+        });
+
+        saveFavoriteBtn.addEventListener('click', () => {
+            const p = currentLatLng();
+            const suggested = `收藏-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
+            const name = window.prompt('請輸入收藏名稱', suggested);
+            if (name === null) return;
+            upsertFavorite(name, p.lat, p.lng);
+        });
+
+        goFavoriteBtn.addEventListener('click', async () => {
+            const idx = Number(favoriteSelect.value);
+            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.favorites.length) {
+                setStatus('請先選擇收藏地點', true);
+                return;
+            }
+            const p = appSettings.favorites[idx];
+            map.panTo([p.lat, p.lng]);
+            await moveByMode(p.lat, p.lng);
+        });
+
+        deleteFavoriteBtn.addEventListener('click', () => {
+            deleteSelectedFavorite();
         });
 
         drawRouteBtn.addEventListener('click', () => {
@@ -834,11 +1112,27 @@ WEB_PAGE_HTML = """<!doctype html>
             setStatus(`模式: ${moveModeEl.value === 'smooth' ? '平滑移動' : '即時傳送'}，速度上限 ${SPEED_KMH} km/h`);
         });
 
-        setInitialView(25.033964, 121.564468);
-        updateDrawRouteButton();
-        updatePlaybackButtons();
-        setStatus(`模式: 即時傳送，速度上限 ${SPEED_KMH} km/h`);
-        initFromBrowserGps();
+        map.on('moveend zoomend', scheduleSaveMapState);
+
+        window.addEventListener('beforeunload', flushSettingsOnLeave);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                flushSettingsOnLeave();
+            }
+        });
+
+        async function bootstrap() {
+            setInitialView(25.033964, 121.564468);
+            updateDrawRouteButton();
+            updatePlaybackButtons();
+            setStatus(`模式: 即時傳送，速度上限 ${SPEED_KMH} km/h`);
+            const hasPersistedSettings = await loadSettings();
+            if (!hasPersistedSettings) {
+                initFromBrowserGps();
+            }
+        }
+
+        bootstrap();
 
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (busy) return;
@@ -945,6 +1239,7 @@ def create_web_app():
             with _web_action_lock:
                 asyncio.run(_apply_location_action("set", lat, lng))
             _web_location_set = True
+            _merge_settings({"last_position": {"lat": lat, "lng": lng}})
             return jsonify({"ok": True, "lat": lat, "lng": lng})
         except Exception as e:
             logger.error(f"Web 設定位置失敗: {e}")
@@ -966,6 +1261,26 @@ def create_web_app():
     def api_session_status():
         status = _session.status()
         return jsonify(status)
+
+    @app.get("/api/settings")
+    def api_get_settings():
+        try:
+            settings = _load_settings()
+            settings["_persisted"] = os.path.exists(SETTINGS_FILE)
+            return jsonify(settings)
+        except Exception as e:
+            logger.error(f"讀取設定失敗: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.post("/api/settings")
+    def api_save_settings():
+        data = request.get_json(silent=True) or {}
+        try:
+            saved = _merge_settings(data)
+            return jsonify({"ok": True, "settings": saved})
+        except Exception as e:
+            logger.error(f"儲存設定失敗: {e}")
+            return jsonify({"error": str(e)}), 500
 
     return app
 
