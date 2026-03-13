@@ -83,6 +83,135 @@ logger = logging.getLogger(__name__)
 _web_action_lock = threading.Lock()
 _web_location_set = False
 
+
+class PersistentLocationSession:
+    def __init__(self) -> None:
+        self.lockdown = None
+        self.rsd = None
+        self.dvt = None
+        self.sim = None
+        self.tunnel_thread = None
+        self.tunnel_stop_event = None
+        self.connected = False
+
+    async def ensure_connected(self) -> None:
+        if self.connected:
+            return
+
+        devices = list_devices()
+        if not devices:
+            raise RuntimeError("未找到 iOS 裝置。請確認已連接並信任電腦。")
+
+        udid = devices[0].serial
+        logger.info(f"發現裝置: {udid}")
+
+        self.lockdown = create_using_usbmux(udid)
+        ios_version = self.lockdown.product_version
+        major_version = int(ios_version.split('.')[0])
+
+        await _prepare_developer_image(self.lockdown)
+
+        if major_version >= 17 and sys.platform == "darwin" and os.geteuid() != 0:
+            raise RuntimeError("iOS 17+ 在 macOS 需要 root 權限建立 Tunnel，請用 sudo 執行")
+
+        if major_version < 17:
+            self.dvt = DvtSecureSocketProxyService(lockdown=self.lockdown)
+            self.dvt.__enter__()
+            self.sim = LocationSimulation(self.dvt)
+            self.connected = True
+            return
+
+        result_queue: queue.Queue = queue.Queue()
+        self.tunnel_stop_event = threading.Event()
+        self.tunnel_thread = threading.Thread(
+            target=_run_tunnel_thread,
+            args=(udid, result_queue, self.tunnel_stop_event),
+            daemon=True,
+        )
+        self.tunnel_thread.start()
+
+        try:
+            result = result_queue.get(timeout=20)
+        except queue.Empty as e:
+            raise TimeoutError("等待 Tunnel 建立逾時") from e
+
+        if result[0] == "error":
+            raise RuntimeError(f"Tunnel 建立失敗: {result[1]}\\n{result[2]}")
+
+        host, port = result[1], result[2]
+        logger.info(f"Tunnel 已建立: {host}:{port}")
+
+        self.rsd = RobustRemoteServiceDiscoveryService((host, port))
+        await self.rsd.connect()
+
+        for attempt in range(1, 4):
+            try:
+                self.dvt = DvtSecureSocketProxyService(self.rsd)
+                self.dvt.__enter__()
+                self.sim = LocationSimulation(self.dvt)
+                self.connected = True
+                return
+            except TimeoutError as e:
+                logger.warning(f"DVT 連線逾時 (第 {attempt}/3 次): {e}")
+                if attempt < 3:
+                    await asyncio.sleep(1)
+                else:
+                    raise
+
+    async def apply(self, action: str, lat: float = None, lng: float = None) -> None:
+        await self.ensure_connected()
+        if action == "set":
+            self.sim.set(lat, lng)
+            return
+        if action == "clear":
+            self.sim.clear()
+            return
+        raise ValueError(f"不支援的動作: {action}")
+
+    async def close(self) -> None:
+        self.connected = False
+        self.sim = None
+
+        if self.dvt is not None:
+            try:
+                self.dvt.__exit__(None, None, None)
+            except Exception:
+                pass
+            self.dvt = None
+
+        if self.rsd is not None:
+            try:
+                await self.rsd.close()
+            except Exception:
+                pass
+            self.rsd = None
+
+        if self.tunnel_stop_event is not None:
+            self.tunnel_stop_event.set()
+            self.tunnel_stop_event = None
+
+        if self.tunnel_thread is not None:
+            self.tunnel_thread.join(timeout=2)
+            self.tunnel_thread = None
+
+        if self.lockdown is not None:
+            try:
+                self.lockdown.close()
+            except Exception:
+                pass
+            self.lockdown = None
+
+    def status(self) -> dict:
+        tunnel_alive = self.tunnel_thread.is_alive() if self.tunnel_thread is not None else False
+        return {
+            "connected": bool(self.connected),
+            "tunnel_alive": bool(tunnel_alive),
+            "has_sim": self.sim is not None,
+        }
+
+
+_session = PersistentLocationSession()
+
 WEB_PAGE_HTML = """<!doctype html>
 <html lang=\"zh-Hant\">
 <head>
@@ -97,6 +226,10 @@ WEB_PAGE_HTML = """<!doctype html>
         .top { padding:12px 14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:rgba(255,255,255,.78); backdrop-filter: blur(6px); border-bottom:1px solid #d7e3ee; }
         .title { font-size:16px; font-weight:700; letter-spacing:.4px; }
         .status { font-size:13px; color:var(--muted); flex:1; }
+        .session-pill { display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #d5dee8; border-radius:999px; background:#fff; font-size:12px; color:#334155; }
+        .session-dot { width:8px; height:8px; border-radius:50%; background:#94a3b8; }
+        .session-dot.ok { background:#16a34a; }
+        .session-dot.off { background:#ef4444; }
         .btn { border:0; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:600; }
         .btn.secondary { background:#334155; }
         .coord { display:flex; gap:8px; align-items:center; }
@@ -114,6 +247,7 @@ WEB_PAGE_HTML = """<!doctype html>
                 <input id=\"lngInput\" type=\"number\" step=\"any\" placeholder=\"經度 Lng\" />
                 <button id=\"applyBtn\" class=\"btn\">套用座標</button>
             </div>
+            <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
             <div id=\"status\" class=\"status\">點地圖或輸入經緯度即可更新手機定位</div>
             <button id=\"clearBtn\" class=\"btn secondary\">恢復真實位置</button>
         </div>
@@ -124,6 +258,8 @@ WEB_PAGE_HTML = """<!doctype html>
     <script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\" integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin=\"\"></script>
     <script>
         const statusEl = document.getElementById('status');
+        const sessionDot = document.getElementById('sessionDot');
+        const sessionText = document.getElementById('sessionText');
         const latInput = document.getElementById('latInput');
         const lngInput = document.getElementById('lngInput');
         const map = L.map('map', { zoomControl: true }).setView([25.033964, 121.564468], 12);
@@ -134,10 +270,56 @@ WEB_PAGE_HTML = """<!doctype html>
 
         let marker = null;
         let busy = false;
+        const SPEED_KMH = 18;
+        const SPEED_MPS = SPEED_KMH / 3.6;
+        const KEY_TICK_MS = 200;
+        const STEP_METERS = SPEED_MPS * (KEY_TICK_MS / 1000);
+        const pressed = new Set();
+        let moveTimer = null;
 
         function setStatus(text, warn = false) {
             statusEl.textContent = text;
             statusEl.style.color = warn ? '#b45309' : '#5b6b7c';
+        }
+
+        function setSessionState(connected, tunnelAlive) {
+            sessionDot.classList.remove('ok', 'off');
+            if (connected) {
+                sessionDot.classList.add('ok');
+                sessionText.textContent = tunnelAlive ? '會話已連線（Tunnel 活躍）' : '會話已連線';
+            } else {
+                sessionDot.classList.add('off');
+                sessionText.textContent = '會話已斷線';
+            }
+        }
+
+        async function refreshSessionStatus() {
+            try {
+                const res = await fetch('/api/session-status');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'status error');
+                setSessionState(Boolean(data.connected), Boolean(data.tunnel_alive));
+            } catch (err) {
+                setSessionState(false, false);
+            }
+        }
+
+        function metersToLatDelta(meters) {
+            return meters / 111320;
+        }
+
+        function metersToLngDelta(meters, latitude) {
+            const cosLat = Math.cos((latitude * Math.PI) / 180);
+            const denom = Math.max(1e-6, 111320 * Math.abs(cosLat));
+            return meters / denom;
+        }
+
+        function clampLatLng(lat, lng) {
+            const clampedLat = Math.max(-90, Math.min(90, lat));
+            let wrappedLng = lng;
+            if (wrappedLng > 180) wrappedLng -= 360;
+            if (wrappedLng < -180) wrappedLng += 360;
+            return { lat: clampedLat, lng: wrappedLng };
         }
 
         function setInputs(lat, lng) {
@@ -161,9 +343,11 @@ WEB_PAGE_HTML = """<!doctype html>
                 if (!marker) marker = L.marker([lat, lng]).addTo(map);
                 marker.setLatLng([lat, lng]);
                 setInputs(lat, lng);
-                setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)} (WASD 最高 ${SPEED_KMH} km/h)`);
+                await refreshSessionStatus();
             } catch (err) {
                 setStatus(`更新失敗: ${err.message}`, true);
+                await refreshSessionStatus();
             } finally {
                 busy = false;
             }
@@ -189,7 +373,84 @@ WEB_PAGE_HTML = """<!doctype html>
             await sendLocation(lat, lng);
         });
 
+        function currentLatLng() {
+            if (marker) {
+                const p = marker.getLatLng();
+                return { lat: p.lat, lng: p.lng };
+            }
+            const lat = Number(latInput.value);
+            const lng = Number(lngInput.value);
+            if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+                return { lat, lng };
+            }
+            return { lat: 25.033964, lng: 121.564468 };
+        }
+
+        async function tickMove() {
+            if (pressed.size === 0) return;
+            const now = currentLatLng();
+            let nextLat = now.lat;
+            let nextLng = now.lng;
+            const latStep = metersToLatDelta(STEP_METERS);
+            const lngStep = metersToLngDelta(STEP_METERS, now.lat);
+
+            const y = (pressed.has('w') ? 1 : 0) - (pressed.has('s') ? 1 : 0);
+            const x = (pressed.has('d') ? 1 : 0) - (pressed.has('a') ? 1 : 0);
+            const mag = Math.hypot(x, y);
+            if (mag === 0) return;
+            const nx = x / mag;
+            const ny = y / mag;
+
+            nextLat += ny * latStep;
+            nextLng += nx * lngStep;
+
+            const clamped = clampLatLng(nextLat, nextLng);
+            map.panTo([clamped.lat, clamped.lng], { animate: false });
+            await sendLocation(clamped.lat, clamped.lng);
+        }
+
+        function shouldIgnoreKeyEvent(evt) {
+            const tag = (evt.target && evt.target.tagName) ? evt.target.tagName.toLowerCase() : '';
+            return tag === 'input' || tag === 'textarea';
+        }
+
+        function startMoveTimer() {
+            if (moveTimer) return;
+            moveTimer = setInterval(() => {
+                tickMove();
+            }, KEY_TICK_MS);
+        }
+
+        function stopMoveTimerIfIdle() {
+            if (pressed.size === 0 && moveTimer) {
+                clearInterval(moveTimer);
+                moveTimer = null;
+            }
+        }
+
+        window.addEventListener('keydown', (evt) => {
+            if (shouldIgnoreKeyEvent(evt)) return;
+            const key = evt.key.toLowerCase();
+            if (!['w', 'a', 's', 'd'].includes(key)) return;
+            evt.preventDefault();
+            pressed.add(key);
+            startMoveTimer();
+        });
+
+        window.addEventListener('keyup', (evt) => {
+            const key = evt.key.toLowerCase();
+            if (!['w', 'a', 's', 'd'].includes(key)) return;
+            pressed.delete(key);
+            stopMoveTimerIfIdle();
+        });
+
+        window.addEventListener('blur', () => {
+            pressed.clear();
+            stopMoveTimerIfIdle();
+        });
+
         setInputs(25.033964, 121.564468);
+        setStatus(`點地圖、輸入座標，或用 WASD 控制移動 (最高 ${SPEED_KMH} km/h)`);
 
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (busy) return;
@@ -200,13 +461,18 @@ WEB_PAGE_HTML = """<!doctype html>
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '清除失敗');
                 if (marker) { map.removeLayer(marker); marker = null; }
-                setStatus('已恢復真實位置');
+                setStatus(`已恢復真實位置 (WASD 最高 ${SPEED_KMH} km/h)`);
+                await refreshSessionStatus();
             } catch (err) {
                 setStatus(`恢復失敗: ${err.message}`, true);
+                await refreshSessionStatus();
             } finally {
                 busy = false;
             }
         });
+
+        refreshSessionStatus();
+        setInterval(refreshSessionStatus, 2000);
     </script>
 </body>
 </html>
@@ -232,73 +498,27 @@ async def _prepare_developer_image(lockdown) -> None:
 
 
 async def _apply_location_action(action: str, lat: float = None, lng: float = None) -> None:
-    devices = list_devices()
-    if not devices:
-        raise RuntimeError("未找到 iOS 裝置。請確認已連接並信任電腦。")
-
-    device = devices[0]
-    udid = device.serial
-    logger.info(f"發現裝置: {udid}")
-
-    lockdown = create_using_usbmux(udid)
-    ios_version = lockdown.product_version
-    major_version = int(ios_version.split('.')[0])
-
-    await _prepare_developer_image(lockdown)
-
-    if major_version >= 17 and sys.platform == "darwin" and os.geteuid() != 0:
-        raise RuntimeError("iOS 17+ 在 macOS 需要 root 權限建立 Tunnel，請用 sudo 執行")
-
-    if major_version < 17:
-        with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-            _apply_location_action_sync(LocationSimulation(dvt), action, lat, lng)
-        return
-
-    result_queue: queue.Queue = queue.Queue()
-    stop_event = threading.Event()
-    tunnel_thread = threading.Thread(
-        target=_run_tunnel_thread,
-        args=(udid, result_queue, stop_event),
-        daemon=True,
-    )
-    tunnel_thread.start()
-
     try:
-        try:
-            result = result_queue.get(timeout=20)
-        except queue.Empty as e:
-            raise TimeoutError("等待 Tunnel 建立逾時") from e
-
-        if result[0] == "error":
-            raise RuntimeError(f"Tunnel 建立失敗: {result[1]}\\n{result[2]}")
-
-        host, port = result[1], result[2]
-        logger.info(f"Tunnel 已建立: {host}:{port}")
-
-        async with RobustRemoteServiceDiscoveryService((host, port)) as sp_rsd:
-            for attempt in range(1, 4):
-                try:
-                    with DvtSecureSocketProxyService(sp_rsd) as dvt:
-                        _apply_location_action_sync(LocationSimulation(dvt), action, lat, lng)
-                    break
-                except TimeoutError as e:
-                    logger.warning(f"DVT 連線逾時 (第 {attempt}/3 次): {e}")
-                    if attempt < 3:
-                        await asyncio.sleep(1)
-                    else:
-                        raise
-    finally:
-        stop_event.set()
-        tunnel_thread.join(timeout=2)
+        await _session.apply(action, lat, lng)
+    except Exception:
+        # 連線失效時重建一次會話再重試
+        await _session.close()
+        await _session.apply(action, lat, lng)
 
 
 def _safe_clear_from_web_shutdown() -> None:
     global _web_location_set
     if not _web_location_set:
+        try:
+            with _web_action_lock:
+                asyncio.run(_session.close())
+        except Exception:
+            pass
         return
     try:
         with _web_action_lock:
             asyncio.run(_apply_location_action("clear"))
+            asyncio.run(_session.close())
         logger.info("Web 模式結束前已恢復真實位置。")
     except Exception as e:
         logger.error(f"Web 模式關閉時恢復位置失敗: {e}")
@@ -349,6 +569,11 @@ def create_web_app():
         except Exception as e:
             logger.error(f"Web 清除位置失敗: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.get("/api/session-status")
+    def api_session_status():
+        status = _session.status()
+        return jsonify(status)
 
     return app
 
