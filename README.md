@@ -27,5 +27,4 @@ python3 -m venv venv
 
 source venv/bin/activate
 
-sudo python3 simple_location.py --lat 24.933739 --lng 121.5102269
-
+sudo python3 simple_location.py --lat 24.9766463 --lng 121.529733

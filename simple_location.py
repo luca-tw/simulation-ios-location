@@ -4,6 +4,7 @@ import time
 import asyncio
 import sys
 import os
+import signal
 import traceback
 import threading
 import queue
@@ -170,12 +171,13 @@ def perform_simulation(dvt_service, lat, lng):
     """
     執行位置模擬邏輯
     """
+    sim = None
+    location_set = False
     try:
-        # 修正: LocationSimulation 不需要 with，直接使用
-        # 但通常要維持 dvt_service 連線
         sim = LocationSimulation(dvt_service)
         logger.info(f"正在設定位置到: {lat}, {lng}")
         sim.set(lat, lng)
+        location_set = True
         logger.info("位置已更新！ (請在手機地圖確認)")
         logger.info("請保持此視窗開啟。按 Ctrl+C 停止模擬並恢復位置...")
         
@@ -184,14 +186,21 @@ def perform_simulation(dvt_service, lat, lng):
             
     except KeyboardInterrupt:
         logger.info("停止模擬...")
-        try:
-            # 這裡可能會有 scope 問題，但 dvt_service 在 outer block 是 active 的
-            sim.clear()
-            logger.info("位置已恢復正常。")
-        except Exception as e:
-            logger.error(f"恢復位置時發生錯誤: {e}")
     except Exception as e:
         logger.error(f"模擬過程中發生錯誤: {e}")
+    finally:
+        # 不論正常結束、Ctrl+C 或其他例外，都盡量清除模擬位置
+        if sim is not None and location_set:
+            try:
+                sim.clear()
+                logger.info("位置已恢復正常。")
+            except Exception as e:
+                logger.error(f"恢復位置時發生錯誤: {e}")
+
+
+def _handle_termination_signal(signum, frame):
+    logger.info(f"收到結束訊號 ({signum})，正在停止模擬...")
+    raise KeyboardInterrupt
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="簡易 iOS 位置模擬器")
@@ -202,6 +211,11 @@ if __name__ == "__main__":
     
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    # 讓 Ctrl+C / SIGTERM 都能走到清理流程 (sim.clear)
+    signal.signal(signal.SIGINT, _handle_termination_signal)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _handle_termination_signal)
     
     # 執行 main loop
     try:
