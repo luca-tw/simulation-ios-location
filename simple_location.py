@@ -96,6 +96,7 @@ def _default_settings() -> dict:
         },
         "last_position": None,
         "favorites": [],
+        "saved_routes": [],
     }
 
 
@@ -150,6 +151,38 @@ def _sanitize_settings(raw: dict) -> dict:
                 cleaned.append({"name": name[:64], "lat": lat, "lng": lng})
         settings["favorites"] = cleaned[:100]
 
+    saved_routes = raw.get("saved_routes")
+    if isinstance(saved_routes, list):
+        cleaned_routes = []
+        for route in saved_routes:
+            if not isinstance(route, dict):
+                continue
+
+            route_name = str(route.get("name", "")).strip()
+            if not route_name:
+                continue
+
+            points = route.get("points")
+            if not isinstance(points, list):
+                continue
+
+            cleaned_points = []
+            for p in points:
+                if not isinstance(p, dict):
+                    continue
+                try:
+                    lat = float(p.get("lat"))
+                    lng = float(p.get("lng"))
+                except (TypeError, ValueError):
+                    continue
+                if -90 <= lat <= 90 and -180 <= lng <= 180:
+                    cleaned_points.append({"lat": lat, "lng": lng})
+
+            if len(cleaned_points) >= 2:
+                cleaned_routes.append({"name": route_name[:64], "points": cleaned_points[:5000]})
+
+        settings["saved_routes"] = cleaned_routes[:100]
+
     return settings
 
 
@@ -185,6 +218,8 @@ def _merge_settings(update: dict) -> dict:
         current["last_position"] = update["last_position"]
     if "favorites" in update and isinstance(update["favorites"], list):
         current["favorites"] = update["favorites"]
+    if "saved_routes" in update and isinstance(update["saved_routes"], list):
+        current["saved_routes"] = update["saved_routes"]
 
     return _save_settings(current)
 
@@ -341,6 +376,7 @@ WEB_PAGE_HTML = """<!doctype html>
         .coord input { width:140px; border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
         .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
         .coord .fav-select { width:180px; }
+        .coord .route-select { width:190px; }
         .tools { display:flex; gap:8px; align-items:center; }
         .btn.tool { background:#1f2937; }
         .btn.tool.active { background:#b45309; }
@@ -366,6 +402,12 @@ WEB_PAGE_HTML = """<!doctype html>
                 <button id="saveFavoriteBtn" class="btn secondary">收藏目前點</button>
                 <button id="goFavoriteBtn" class="btn secondary">前往收藏</button>
                 <button id="deleteFavoriteBtn" class="btn secondary">刪除收藏</button>
+                <select id="routePresetSelect" class="route-select">
+                    <option value="">已存路徑</option>
+                </select>
+                <button id="saveRouteBtn" class="btn secondary">儲存路徑</button>
+                <button id="loadRouteBtn" class="btn secondary">載入路徑</button>
+                <button id="deleteRouteBtn" class="btn secondary">刪除路徑</button>
             </div>
             <div class=\"tools\">
                 <button id=\"drawRouteBtn\" class=\"btn tool\">畫路徑</button>
@@ -400,6 +442,10 @@ WEB_PAGE_HTML = """<!doctype html>
         const saveFavoriteBtn = document.getElementById('saveFavoriteBtn');
         const goFavoriteBtn = document.getElementById('goFavoriteBtn');
         const deleteFavoriteBtn = document.getElementById('deleteFavoriteBtn');
+        const routePresetSelect = document.getElementById('routePresetSelect');
+        const saveRouteBtn = document.getElementById('saveRouteBtn');
+        const loadRouteBtn = document.getElementById('loadRouteBtn');
+        const deleteRouteBtn = document.getElementById('deleteRouteBtn');
         const importGpxBtn = document.getElementById('importGpxBtn');
         const exportGpxBtn = document.getElementById('exportGpxBtn');
         const gpxFileInput = document.getElementById('gpxFileInput');
@@ -426,7 +472,12 @@ WEB_PAGE_HTML = """<!doctype html>
         let routeLine = null;
         let routePlaybackActive = false;
         let routePlaybackIndex = 0;
-        let appSettings = { map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 }, last_position: null, favorites: [] };
+        let appSettings = {
+            map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
+            last_position: null,
+            favorites: [],
+            saved_routes: [],
+        };
         let settingsSaveTimer = null;
 
         function setStatus(text, warn = false) {
@@ -478,6 +529,20 @@ WEB_PAGE_HTML = """<!doctype html>
             }
         }
 
+        function renderRoutePresets() {
+            const prev = routePresetSelect.value;
+            routePresetSelect.innerHTML = '<option value="">已存路徑</option>';
+            appSettings.saved_routes.forEach((route, idx) => {
+                const option = document.createElement('option');
+                option.value = String(idx);
+                option.textContent = `${route.name} (${route.points.length} 點)`;
+                routePresetSelect.appendChild(option);
+            });
+            if (prev && Number(prev) < appSettings.saved_routes.length) {
+                routePresetSelect.value = prev;
+            }
+        }
+
         async function saveSettingsPartial(partial) {
             try {
                 const res = await fetch('/api/settings', {
@@ -490,6 +555,7 @@ WEB_PAGE_HTML = """<!doctype html>
                 if (data.settings) {
                     appSettings = data.settings;
                     renderFavorites();
+                    renderRoutePresets();
                 }
             } catch (err) {
                 console.warn('save settings failed', err);
@@ -501,6 +567,7 @@ WEB_PAGE_HTML = """<!doctype html>
                 map: getMapState(),
                 last_position: currentLatLng(),
                 favorites: appSettings.favorites,
+                saved_routes: appSettings.saved_routes,
             };
 
             try {
@@ -538,6 +605,7 @@ WEB_PAGE_HTML = """<!doctype html>
                 if (!res.ok) throw new Error(data.error || 'settings load error');
                 appSettings = data;
                 renderFavorites();
+                renderRoutePresets();
 
                 if (appSettings.map && appSettings.map.center) {
                     const center = appSettings.map.center;
@@ -587,6 +655,69 @@ WEB_PAGE_HTML = """<!doctype html>
             renderFavorites();
             saveSettingsPartial({ favorites: appSettings.favorites });
             setStatus(`已刪除收藏地點: ${name}`);
+        }
+
+        function upsertRoutePreset(name, points) {
+            const normalized = String(name || '').trim();
+            if (!normalized) {
+                setStatus('路徑名稱不可為空', true);
+                return;
+            }
+            if (!Array.isArray(points) || points.length < 2) {
+                setStatus('路徑至少需要 2 個點才能儲存', true);
+                return;
+            }
+
+            const cleanedPoints = points
+                .map((p) => clampLatLng(Number(p.lat), Number(p.lng)))
+                .filter((p) => !Number.isNaN(p.lat) && !Number.isNaN(p.lng));
+
+            if (cleanedPoints.length < 2) {
+                setStatus('路徑點格式錯誤，無法儲存', true);
+                return;
+            }
+
+            const idx = appSettings.saved_routes.findIndex((r) => r.name === normalized);
+            const routePayload = { name: normalized, points: cleanedPoints };
+            if (idx >= 0) {
+                appSettings.saved_routes[idx] = routePayload;
+            } else {
+                appSettings.saved_routes.push(routePayload);
+            }
+
+            renderRoutePresets();
+            saveSettingsPartial({ saved_routes: appSettings.saved_routes });
+            setStatus(`已儲存路徑: ${normalized}（${cleanedPoints.length} 點）`);
+        }
+
+        function loadSelectedRoutePreset() {
+            const idx = Number(routePresetSelect.value);
+            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.saved_routes.length) {
+                setStatus('請先選擇要載入的路徑', true);
+                return;
+            }
+
+            const route = appSettings.saved_routes[idx];
+            routePoints = route.points.map((p) => clampLatLng(p.lat, p.lng));
+            updateRouteVisuals();
+            const first = routePoints[0];
+            const last = routePoints[routePoints.length - 1];
+            map.fitBounds([[first.lat, first.lng], [last.lat, last.lng]], { padding: [30, 30] });
+            setStatus(`已載入路徑: ${route.name}（${routePoints.length} 點）`);
+        }
+
+        function deleteSelectedRoutePreset() {
+            const idx = Number(routePresetSelect.value);
+            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.saved_routes.length) {
+                setStatus('請先選擇要刪除的路徑', true);
+                return;
+            }
+
+            const name = appSettings.saved_routes[idx].name;
+            appSettings.saved_routes.splice(idx, 1);
+            renderRoutePresets();
+            saveSettingsPartial({ saved_routes: appSettings.saved_routes });
+            setStatus(`已刪除路徑: ${name}`);
         }
 
         function metersToLatDelta(meters) {
@@ -922,6 +1053,25 @@ WEB_PAGE_HTML = """<!doctype html>
             deleteSelectedFavorite();
         });
 
+        saveRouteBtn.addEventListener('click', () => {
+            if (routePoints.length < 2) {
+                setStatus('請先畫路徑或匯入 GPX 後再儲存', true);
+                return;
+            }
+            const suggested = `路徑-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
+            const name = window.prompt('請輸入路徑名稱', suggested);
+            if (name === null) return;
+            upsertRoutePreset(name, routePoints);
+        });
+
+        loadRouteBtn.addEventListener('click', () => {
+            loadSelectedRoutePreset();
+        });
+
+        deleteRouteBtn.addEventListener('click', () => {
+            deleteSelectedRoutePreset();
+        });
+
         drawRouteBtn.addEventListener('click', () => {
             drawRouteMode = !drawRouteMode;
             updateDrawRouteButton();
@@ -969,6 +1119,12 @@ WEB_PAGE_HTML = """<!doctype html>
                 const last = routePoints[routePoints.length - 1];
                 map.fitBounds([[first.lat, first.lng], [last.lat, last.lng]], { padding: [30, 30] });
                 setStatus(`GPX 匯入成功（${routePoints.length} 點）`);
+
+                const base = file.name.replace(/\.gpx$/i, '').trim() || '匯入路徑';
+                const shouldSave = window.confirm('是否將此匯入路徑存到「已存路徑」清單？');
+                if (shouldSave) {
+                    upsertRoutePreset(base, routePoints);
+                }
             } catch (err) {
                 setStatus(`GPX 匯入失敗: ${err.message}`, true);
             } finally {
