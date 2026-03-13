@@ -361,6 +361,40 @@ WEB_PAGE_HTML = """<!doctype html>
             lngInput.value = Number(lng).toFixed(6);
         }
 
+        function setInitialView(lat, lng) {
+            const clamped = clampLatLng(lat, lng);
+            setInputs(clamped.lat, clamped.lng);
+            map.setView([clamped.lat, clamped.lng], 16, { animate: false });
+            if (!marker) marker = L.marker([clamped.lat, clamped.lng]).addTo(map);
+            marker.setLatLng([clamped.lat, clamped.lng]);
+        }
+
+        function initFromBrowserGps() {
+            if (!navigator.geolocation) {
+                setStatus('瀏覽器不支援 GPS，使用預設初始位置', true);
+                return;
+            }
+
+            setStatus('正在請求網頁 GPS 位置...');
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    setInitialView(lat, lng);
+                    setStatus(`已使用網頁 GPS 作為初始位置: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                },
+                (err) => {
+                    const msg = err && err.message ? err.message : '未知錯誤';
+                    setStatus(`無法取得網頁 GPS，使用預設初始位置: ${msg}`, true);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 30000,
+                }
+            );
+        }
+
         function updateDrawRouteButton() {
             drawRouteBtn.classList.toggle('active', drawRouteMode);
             drawRouteBtn.textContent = drawRouteMode ? '結束繪製' : '畫路徑';
@@ -800,10 +834,11 @@ WEB_PAGE_HTML = """<!doctype html>
             setStatus(`模式: ${moveModeEl.value === 'smooth' ? '平滑移動' : '即時傳送'}，速度上限 ${SPEED_KMH} km/h`);
         });
 
-        setInputs(25.033964, 121.564468);
+        setInitialView(25.033964, 121.564468);
         updateDrawRouteButton();
         updatePlaybackButtons();
         setStatus(`模式: 即時傳送，速度上限 ${SPEED_KMH} km/h`);
+        initFromBrowserGps();
 
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (busy) return;
