@@ -1,6 +1,4 @@
-import argparse
 import logging
-import time
 import asyncio
 import sys
 import os
@@ -8,6 +6,7 @@ import signal
 import traceback
 import threading
 import queue
+import atexit
 from pymobiledevice3.usbmux import list_devices
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
@@ -15,6 +14,13 @@ from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocket
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.cli.mounter import auto_mount
 from pymobiledevice3.service_connection import ServiceConnection
+
+try:
+    from flask import Flask, jsonify, request
+except ImportError:
+    Flask = None
+    jsonify = None
+    request = None
 
 # 自訂 RSD 類別以處理連線逾時問題
 class RobustRemoteServiceDiscoveryService(RemoteServiceDiscoveryService):
@@ -74,151 +80,298 @@ def _run_tunnel_thread(udid: str, result_queue: queue.Queue, stop_event: threadi
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-async def start_simulation(lat, lng):
+_web_action_lock = threading.Lock()
+_web_location_set = False
+
+WEB_PAGE_HTML = """<!doctype html>
+<html lang=\"zh-Hant\">
+<head>
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+    <title>iOS 即時定位地圖</title>
+    <link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\" integrity=\"sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=\" crossorigin=\"\" />
+    <style>
+        :root { --bg:#f5f7fb; --card:#ffffff; --ink:#102136; --muted:#5b6b7c; --brand:#0f766e; --warn:#b45309; }
+        html, body { height: 100%; margin: 0; background: radial-gradient(circle at 20% 20%, #eef6ff, #f7fafc 60%, #eef2ff 100%); color: var(--ink); font-family: \"Avenir Next\", \"PingFang TC\", \"Noto Sans TC\", sans-serif; }
+        .wrap { display:flex; flex-direction:column; height:100%; }
+        .top { padding:12px 14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:rgba(255,255,255,.78); backdrop-filter: blur(6px); border-bottom:1px solid #d7e3ee; }
+        .title { font-size:16px; font-weight:700; letter-spacing:.4px; }
+        .status { font-size:13px; color:var(--muted); flex:1; }
+        .btn { border:0; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:600; }
+        .btn.secondary { background:#334155; }
+        .coord { display:flex; gap:8px; align-items:center; }
+        .coord input { width:140px; border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
+        #map { flex:1; }
+        .hint { position:absolute; right:12px; bottom:12px; z-index:500; background:rgba(16,33,54,.88); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; }
+    </style>
+</head>
+<body>
+    <div class=\"wrap\">
+        <div class=\"top\">
+            <div class=\"title\">iOS 即時定位</div>
+            <div class=\"coord\">
+                <input id=\"latInput\" type=\"number\" step=\"any\" placeholder=\"緯度 Lat\" />
+                <input id=\"lngInput\" type=\"number\" step=\"any\" placeholder=\"經度 Lng\" />
+                <button id=\"applyBtn\" class=\"btn\">套用座標</button>
+            </div>
+            <div id=\"status\" class=\"status\">點地圖或輸入經緯度即可更新手機定位</div>
+            <button id=\"clearBtn\" class=\"btn secondary\">恢復真實位置</button>
+        </div>
+        <div id=\"map\"></div>
+    </div>
+    <div class=\"hint\">資料來源: OpenStreetMap</div>
+
+    <script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\" integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin=\"\"></script>
+    <script>
+        const statusEl = document.getElementById('status');
+        const latInput = document.getElementById('latInput');
+        const lngInput = document.getElementById('lngInput');
+        const map = L.map('map', { zoomControl: true }).setView([25.033964, 121.564468], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        let marker = null;
+        let busy = false;
+
+        function setStatus(text, warn = false) {
+            statusEl.textContent = text;
+            statusEl.style.color = warn ? '#b45309' : '#5b6b7c';
+        }
+
+        function setInputs(lat, lng) {
+            latInput.value = Number(lat).toFixed(6);
+            lngInput.value = Number(lng).toFixed(6);
+        }
+
+        async function sendLocation(lat, lng) {
+            if (busy) return;
+            busy = true;
+            setStatus('正在更新定位中...');
+            try {
+                const res = await fetch('/api/set-location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lat, lng })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '設定失敗');
+
+                if (!marker) marker = L.marker([lat, lng]).addTo(map);
+                marker.setLatLng([lat, lng]);
+                setInputs(lat, lng);
+                setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+            } catch (err) {
+                setStatus(`更新失敗: ${err.message}`, true);
+            } finally {
+                busy = false;
+            }
+        }
+
+        map.on('click', (e) => {
+            const { lat, lng } = e.latlng;
+            sendLocation(lat, lng);
+        });
+
+        document.getElementById('applyBtn').addEventListener('click', async () => {
+            const lat = Number(latInput.value);
+            const lng = Number(lngInput.value);
+            if (Number.isNaN(lat) || Number.isNaN(lng)) {
+                setStatus('請先輸入有效經緯度', true);
+                return;
+            }
+            if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                setStatus('經緯度超出範圍', true);
+                return;
+            }
+            map.panTo([lat, lng]);
+            await sendLocation(lat, lng);
+        });
+
+        setInputs(25.033964, 121.564468);
+
+        document.getElementById('clearBtn').addEventListener('click', async () => {
+            if (busy) return;
+            busy = true;
+            setStatus('正在恢復真實位置...');
+            try {
+                const res = await fetch('/api/clear-location', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '清除失敗');
+                if (marker) { map.removeLayer(marker); marker = null; }
+                setStatus('已恢復真實位置');
+            } catch (err) {
+                setStatus(`恢復失敗: ${err.message}`, true);
+            } finally {
+                busy = false;
+            }
+        });
+    </script>
+</body>
+</html>
+"""
+
+
+def _apply_location_action_sync(simulation, action: str, lat: float = None, lng: float = None) -> None:
+    if action == "set":
+        simulation.set(lat, lng)
+        return
+    if action == "clear":
+        simulation.clear()
+        return
+    raise ValueError(f"不支援的動作: {action}")
+
+
+async def _prepare_developer_image(lockdown) -> None:
+    try:
+        await auto_mount(lockdown)
+        logger.info("Image 掛載成功 (或已掛載)")
+    except Exception as e:
+        logger.warning(f"掛載 Image 時發生警告 (可能已掛載): {e}")
+
+
+async def _apply_location_action(action: str, lat: float = None, lng: float = None) -> None:
     devices = list_devices()
     if not devices:
-        logger.error("未找到 iOS 裝置。請確認已連接並信任電腦。")
-        return
+        raise RuntimeError("未找到 iOS 裝置。請確認已連接並信任電腦。")
 
     device = devices[0]
     udid = device.serial
     logger.info(f"發現裝置: {udid}")
 
-    lockdown = None
-    try:
-        # 1. 建立 Lockdown 連線
-        lockdown = create_using_usbmux(udid)
-        ios_version = lockdown.product_version
-        logger.info(f"iOS 版本: {ios_version}")
+    lockdown = create_using_usbmux(udid)
+    ios_version = lockdown.product_version
+    major_version = int(ios_version.split('.')[0])
 
-        # 2. 自動掛載 Developer Disk Image
-        logger.info("檢查並掛載 Developer Disk Image...")
+    await _prepare_developer_image(lockdown)
+
+    if major_version >= 17 and sys.platform == "darwin" and os.geteuid() != 0:
+        raise RuntimeError("iOS 17+ 在 macOS 需要 root 權限建立 Tunnel，請用 sudo 執行")
+
+    if major_version < 17:
+        with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+            _apply_location_action_sync(LocationSimulation(dvt), action, lat, lng)
+        return
+
+    result_queue: queue.Queue = queue.Queue()
+    stop_event = threading.Event()
+    tunnel_thread = threading.Thread(
+        target=_run_tunnel_thread,
+        args=(udid, result_queue, stop_event),
+        daemon=True,
+    )
+    tunnel_thread.start()
+
+    try:
         try:
-            await auto_mount(lockdown)
-            logger.info("Image 掛載成功 (或已掛載)")
-        except Exception as e:
-            logger.warning(f"掛載 Image 時發生警告 (可能已掛載): {e}")
+            result = result_queue.get(timeout=20)
+        except queue.Empty as e:
+            raise TimeoutError("等待 Tunnel 建立逾時") from e
 
-        major_version = int(ios_version.split('.')[0])
-        
-        if major_version >= 17:
-             # iOS 17+ 流程: RSD -> Tunnel -> DVT
-            if sys.platform == "darwin" and os.geteuid() != 0:
-                logger.error("iOS 17+ 在 macOS 需要 root 權限建立 Tunnel。請改用: sudo python simple_location.py --lat <緯度> --lng <經度>")
-                return
-            logger.info("檢測到 iOS 17+，正在嘗試建立 Tunnel...")
-            
-            try:
-                # Tunnel 需在事件迴圈中持續轉送封包；改由背景執行緒維持，避免被同步 DVT 連線阻塞
-                result_queue: queue.Queue = queue.Queue()
-                stop_event = threading.Event()
-                tunnel_thread = threading.Thread(
-                    target=_run_tunnel_thread,
-                    args=(udid, result_queue, stop_event),
-                    daemon=True,
-                )
-                tunnel_thread.start()
+        if result[0] == "error":
+            raise RuntimeError(f"Tunnel 建立失敗: {result[1]}\\n{result[2]}")
 
+        host, port = result[1], result[2]
+        logger.info(f"Tunnel 已建立: {host}:{port}")
+
+        async with RobustRemoteServiceDiscoveryService((host, port)) as sp_rsd:
+            for attempt in range(1, 4):
                 try:
-                    result = result_queue.get(timeout=20)
-                except queue.Empty as e:
-                    raise TimeoutError("等待 Tunnel 建立逾時") from e
-
-                if result[0] == "error":
-                    raise RuntimeError(f"Tunnel 建立失敗: {result[1]}\n{result[2]}")
-
-                host, port = result[1], result[2]
-                logger.info(f"Tunnel 已建立: {host}:{port}")
-
-                try:
-                    async with RobustRemoteServiceDiscoveryService((host, port)) as sp_rsd:
-                        logger.info("正在建立 DVT 連線...")
-                        for attempt in range(1, 4):
-                            try:
-                                with DvtSecureSocketProxyService(sp_rsd) as dvt:
-                                    perform_simulation(dvt, lat, lng)
-                                break
-                            except TimeoutError as e:
-                                logger.warning(f"DVT 連線逾時 (第 {attempt}/3 次): {e}")
-                                if attempt < 3:
-                                    await asyncio.sleep(1)
-                                else:
-                                    raise
-                finally:
-                    stop_event.set()
-                    tunnel_thread.join(timeout=2)
-            except Exception as e:
-                logger.error(f"iOS 17 Tunnel 連線失敗: {e}")
-                traceback.print_exc()
-                logger.info("嘗試使用標準 Lockdown 連線...")
-                try:
-                    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-                        perform_simulation(dvt, lat, lng)
-                except Exception as e2:
-                    logger.error(f"標準連線也失敗: {e2}")
-
-        else:
-            # iOS 16 以下流程: Lockdown -> DVT
-            logger.info("檢測到 iOS 16 以下，使用標準 Lockdown 連線...")
-            with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-                perform_simulation(dvt, lat, lng)
-
-    except Exception as e:
-        logger.error(f"發生錯誤: {e}")
-        traceback.print_exc()
-
-def perform_simulation(dvt_service, lat, lng):
-    """
-    執行位置模擬邏輯
-    """
-    sim = None
-    location_set = False
-    try:
-        sim = LocationSimulation(dvt_service)
-        logger.info(f"正在設定位置到: {lat}, {lng}")
-        sim.set(lat, lng)
-        location_set = True
-        logger.info("位置已更新！ (請在手機地圖確認)")
-        logger.info("請保持此視窗開啟。按 Ctrl+C 停止模擬並恢復位置...")
-        
-        while True:
-            time.sleep(1)
-            
-    except KeyboardInterrupt:
-        logger.info("停止模擬...")
-    except Exception as e:
-        logger.error(f"模擬過程中發生錯誤: {e}")
+                    with DvtSecureSocketProxyService(sp_rsd) as dvt:
+                        _apply_location_action_sync(LocationSimulation(dvt), action, lat, lng)
+                    break
+                except TimeoutError as e:
+                    logger.warning(f"DVT 連線逾時 (第 {attempt}/3 次): {e}")
+                    if attempt < 3:
+                        await asyncio.sleep(1)
+                    else:
+                        raise
     finally:
-        # 不論正常結束、Ctrl+C 或其他例外，都盡量清除模擬位置
-        if sim is not None and location_set:
-            try:
-                sim.clear()
-                logger.info("位置已恢復正常。")
-            except Exception as e:
-                logger.error(f"恢復位置時發生錯誤: {e}")
+        stop_event.set()
+        tunnel_thread.join(timeout=2)
 
+
+def _safe_clear_from_web_shutdown() -> None:
+    global _web_location_set
+    if not _web_location_set:
+        return
+    try:
+        with _web_action_lock:
+            asyncio.run(_apply_location_action("clear"))
+        logger.info("Web 模式結束前已恢復真實位置。")
+    except Exception as e:
+        logger.error(f"Web 模式關閉時恢復位置失敗: {e}")
+    finally:
+        _web_location_set = False
+
+
+def create_web_app():
+    if Flask is None:
+        raise RuntimeError("缺少 Flask，請先安裝 requirements.txt")
+
+    app = Flask(__name__)
+
+    @app.get("/")
+    def index():
+        return WEB_PAGE_HTML
+
+    @app.post("/api/set-location")
+    def api_set_location():
+        global _web_location_set
+        data = request.get_json(silent=True) or {}
+        try:
+            lat = float(data.get("lat"))
+            lng = float(data.get("lng"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "lat/lng 格式錯誤"}), 400
+
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            return jsonify({"error": "經緯度超出範圍"}), 400
+
+        try:
+            with _web_action_lock:
+                asyncio.run(_apply_location_action("set", lat, lng))
+            _web_location_set = True
+            return jsonify({"ok": True, "lat": lat, "lng": lng})
+        except Exception as e:
+            logger.error(f"Web 設定位置失敗: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.post("/api/clear-location")
+    def api_clear_location():
+        global _web_location_set
+        try:
+            with _web_action_lock:
+                asyncio.run(_apply_location_action("clear"))
+            _web_location_set = False
+            return jsonify({"ok": True})
+        except Exception as e:
+            logger.error(f"Web 清除位置失敗: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    return app
 
 def _handle_termination_signal(signum, frame):
+    try:
+        _safe_clear_from_web_shutdown()
+    except Exception as e:
+        logger.error(f"結束前清理失敗: {e}")
     logger.info(f"收到結束訊號 ({signum})，正在停止模擬...")
     raise KeyboardInterrupt
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="簡易 iOS 位置模擬器")
-    parser.add_argument("--lat", type=float, default=25.033964, help="緯度 (預設: 台北 101)")
-    parser.add_argument("--lng", type=float, default=121.564468, help="經度 (預設: 台北 101)")
-    
-    args = parser.parse_args()
-    
-    if sys.platform == 'win32':
+    host = os.environ.get("SIMPLE_LOCATION_HOST", "127.0.0.1")
+    port = int(os.environ.get("SIMPLE_LOCATION_PORT", "8000"))
+
+    if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    # 讓 Ctrl+C / SIGTERM 都能走到清理流程 (sim.clear)
     signal.signal(signal.SIGINT, _handle_termination_signal)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _handle_termination_signal)
-    
-    # 執行 main loop
-    try:
-        asyncio.run(start_simulation(args.lat, args.lng))
-    except KeyboardInterrupt:
-        pass
+
+    atexit.register(_safe_clear_from_web_shutdown)
+    app = create_web_app()
+    logger.info(f"Web 模式啟動: http://{host}:{port}")
+    app.run(host=host, port=port, debug=False)
