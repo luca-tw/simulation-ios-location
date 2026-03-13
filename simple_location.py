@@ -235,6 +235,9 @@ WEB_PAGE_HTML = """<!doctype html>
         .coord { display:flex; gap:8px; align-items:center; }
         .coord input { width:140px; border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
         .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
+        .tools { display:flex; gap:8px; align-items:center; }
+        .btn.tool { background:#1f2937; }
+        .btn.tool.active { background:#b45309; }
         #map { flex:1; }
         .hint { position:absolute; right:12px; bottom:12px; z-index:500; background:rgba(16,33,54,.88); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; }
     </style>
@@ -252,6 +255,15 @@ WEB_PAGE_HTML = """<!doctype html>
                 </select>
                 <button id=\"applyBtn\" class=\"btn\">套用座標</button>
             </div>
+            <div class=\"tools\">
+                <button id=\"drawRouteBtn\" class=\"btn tool\">畫路徑</button>
+                <button id=\"clearRouteBtn\" class=\"btn tool\">清空路徑</button>
+                <button id=\"playRouteBtn\" class=\"btn tool\">播放路徑</button>
+                <button id=\"stopRouteBtn\" class=\"btn tool\">停止播放</button>
+                <button id=\"importGpxBtn\" class=\"btn tool\">匯入 GPX</button>
+                <button id=\"exportGpxBtn\" class=\"btn tool\">匯出 GPX</button>
+                <input id=\"gpxFileInput\" type=\"file\" accept=\".gpx,application/gpx+xml,text/xml,application/xml\" style=\"display:none\" />
+            </div>
             <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
             <div id=\"status\" class=\"status\">點地圖或輸入經緯度即可更新手機定位</div>
             <button id=\"clearBtn\" class=\"btn secondary\">恢復真實位置</button>
@@ -268,6 +280,13 @@ WEB_PAGE_HTML = """<!doctype html>
         const latInput = document.getElementById('latInput');
         const lngInput = document.getElementById('lngInput');
         const moveModeEl = document.getElementById('moveMode');
+        const drawRouteBtn = document.getElementById('drawRouteBtn');
+        const clearRouteBtn = document.getElementById('clearRouteBtn');
+        const playRouteBtn = document.getElementById('playRouteBtn');
+        const stopRouteBtn = document.getElementById('stopRouteBtn');
+        const importGpxBtn = document.getElementById('importGpxBtn');
+        const exportGpxBtn = document.getElementById('exportGpxBtn');
+        const gpxFileInput = document.getElementById('gpxFileInput');
         const map = L.map('map', { zoomControl: true }).setView([25.033964, 121.564468], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
@@ -276,6 +295,7 @@ WEB_PAGE_HTML = """<!doctype html>
 
         let marker = null;
         let busy = false;
+        let pendingLocation = null;
         const SPEED_KMH = 18;
         const SPEED_MPS = SPEED_KMH / 3.6;
         const KEY_TICK_MS = 200;
@@ -283,6 +303,13 @@ WEB_PAGE_HTML = """<!doctype html>
         const pressed = new Set();
         let moveTimer = null;
         let smoothTarget = null;
+        let targetMarker = null;
+        let targetLine = null;
+        let drawRouteMode = false;
+        let routePoints = [];
+        let routeLine = null;
+        let routePlaybackActive = false;
+        let routePlaybackIndex = 0;
 
         function setStatus(text, warn = false) {
             statusEl.textContent = text;
@@ -334,10 +361,186 @@ WEB_PAGE_HTML = """<!doctype html>
             lngInput.value = Number(lng).toFixed(6);
         }
 
-        async function sendLocation(lat, lng) {
-            if (busy) return;
+        function updateDrawRouteButton() {
+            drawRouteBtn.classList.toggle('active', drawRouteMode);
+            drawRouteBtn.textContent = drawRouteMode ? '結束繪製' : '畫路徑';
+        }
+
+        function updatePlaybackButtons() {
+            playRouteBtn.classList.toggle('active', routePlaybackActive);
+            playRouteBtn.textContent = routePlaybackActive ? '播放中...' : '播放路徑';
+        }
+
+        function updateRouteVisuals() {
+            if (routePoints.length < 2) {
+                if (routeLine) {
+                    map.removeLayer(routeLine);
+                    routeLine = null;
+                }
+                return;
+            }
+
+            const latlngs = routePoints.map((p) => [p.lat, p.lng]);
+            if (!routeLine) {
+                routeLine = L.polyline(latlngs, {
+                    color: '#2563eb',
+                    weight: 4,
+                    opacity: 0.85,
+                }).addTo(map);
+            } else {
+                routeLine.setLatLngs(latlngs);
+            }
+        }
+
+        function clearRoute() {
+            routePoints = [];
+            routePlaybackActive = false;
+            routePlaybackIndex = 0;
+            smoothTarget = null;
+            pendingLocation = null;
+            if (routeLine) {
+                map.removeLayer(routeLine);
+                routeLine = null;
+            }
+            updatePlaybackButtons();
+        }
+
+        function addRoutePoint(lat, lng) {
+            routePoints.push(clampLatLng(lat, lng));
+            updateRouteVisuals();
+            setStatus(`路徑點已加入（${routePoints.length} 點）`);
+        }
+
+        function stopRoutePlayback(showStatus = true) {
+            routePlaybackActive = false;
+            routePlaybackIndex = 0;
+            smoothTarget = null;
+            pendingLocation = null;
+            updatePlaybackButtons();
+            if (showStatus) {
+                setStatus(`已停止路徑播放（速度上限 ${SPEED_KMH} km/h）`);
+            }
+        }
+
+        function startRoutePlayback() {
+            if (routePoints.length < 2) {
+                setStatus('請先畫至少 2 個路徑點才能播放', true);
+                return;
+            }
+
+            drawRouteMode = false;
+            updateDrawRouteButton();
+            routePlaybackActive = true;
+            routePlaybackIndex = 0;
+            smoothTarget = routePoints[routePlaybackIndex];
+            updateSmoothVisuals(currentLatLng(), smoothTarget);
+            updatePlaybackButtons();
+            startMoveTimer();
+            setStatus(`開始沿路徑播放（速度上限 ${SPEED_KMH} km/h）`);
+        }
+
+        function buildGpx(points) {
+            const now = new Date().toISOString();
+            const trkpts = points
+                .map((p) => `        <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><time>${now}</time></trkpt>`)
+                .join('\\n');
+
+            return `<?xml version="1.0" encoding="UTF-8"?>\n` +
+                `<gpx version="1.1" creator="simple-ios-location" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+                `  <trk>\n` +
+                `    <name>simple-ios-location route</name>\n` +
+                `    <trkseg>\n${trkpts}\n    </trkseg>\n` +
+                `  </trk>\n` +
+                `</gpx>\n`;
+        }
+
+        function downloadTextFile(filename, text) {
+            const blob = new Blob([text], { type: 'application/gpx+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function parseGpxText(gpxText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(gpxText, 'application/xml');
+            if (xmlDoc.querySelector('parsererror')) {
+                throw new Error('GPX 格式無法解析');
+            }
+
+            const result = [];
+            const trkpts = xmlDoc.getElementsByTagName('trkpt');
+            const rtepts = xmlDoc.getElementsByTagName('rtept');
+            const points = trkpts.length > 0 ? trkpts : rtepts;
+
+            for (let i = 0; i < points.length; i += 1) {
+                const node = points[i];
+                const lat = Number(node.getAttribute('lat'));
+                const lng = Number(node.getAttribute('lon'));
+                if (Number.isNaN(lat) || Number.isNaN(lng)) {
+                    continue;
+                }
+                result.push(clampLatLng(lat, lng));
+            }
+
+            if (result.length < 2) {
+                throw new Error('GPX 至少需要 2 個路徑點');
+            }
+
+            return result;
+        }
+
+        function clearSmoothVisuals() {
+            if (targetMarker) {
+                map.removeLayer(targetMarker);
+                targetMarker = null;
+            }
+            if (targetLine) {
+                map.removeLayer(targetLine);
+                targetLine = null;
+            }
+        }
+
+        function updateSmoothVisuals(current, target) {
+            if (!targetMarker) {
+                targetMarker = L.marker([target.lat, target.lng]).addTo(map);
+                targetMarker.bindTooltip('目的地旗標', { permanent: true, direction: 'top', offset: [0, -10] });
+            } else {
+                targetMarker.setLatLng([target.lat, target.lng]);
+            }
+
+            if (!targetLine) {
+                targetLine = L.polyline([[current.lat, current.lng], [target.lat, target.lng]], {
+                    color: '#0f766e',
+                    weight: 4,
+                    opacity: 0.8,
+                    dashArray: '10, 8'
+                }).addTo(map);
+            } else {
+                targetLine.setLatLngs([[current.lat, current.lng], [target.lat, target.lng]]);
+            }
+        }
+
+        function applyLocalPosition(lat, lng) {
+            if (!marker) marker = L.marker([lat, lng]).addTo(map);
+            marker.setLatLng([lat, lng]);
+            setInputs(lat, lng);
+            map.panTo([lat, lng], { animate: false });
+        }
+
+        async function sendLocation(lat, lng, options = {}) {
+            const { silent = false } = options;
+            if (busy) {
+                pendingLocation = { lat, lng, silent };
+                return;
+            }
             busy = true;
-            setStatus('正在更新定位中...');
+            if (!silent) {
+                setStatus('正在更新定位中...');
+            }
             try {
                 const res = await fetch('/api/set-location', {
                     method: 'POST',
@@ -347,35 +550,48 @@ WEB_PAGE_HTML = """<!doctype html>
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '設定失敗');
 
-                if (!marker) marker = L.marker([lat, lng]).addTo(map);
-                marker.setLatLng([lat, lng]);
-                setInputs(lat, lng);
-                setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)} (WASD 最高 ${SPEED_KMH} km/h)`);
-                await refreshSessionStatus();
+                applyLocalPosition(lat, lng);
+                if (!silent) {
+                    setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)} (WASD 最高 ${SPEED_KMH} km/h)`);
+                    await refreshSessionStatus();
+                }
             } catch (err) {
                 setStatus(`更新失敗: ${err.message}`, true);
                 await refreshSessionStatus();
             } finally {
                 busy = false;
+                if (pendingLocation) {
+                    const next = pendingLocation;
+                    pendingLocation = null;
+                    sendLocation(next.lat, next.lng, { silent: next.silent });
+                }
             }
         }
 
         function startSmoothMoveTo(lat, lng) {
             smoothTarget = clampLatLng(lat, lng);
+            updateSmoothVisuals(currentLatLng(), smoothTarget);
             startMoveTimer();
         }
 
         async function moveByMode(lat, lng) {
+            routePlaybackActive = false;
+            updatePlaybackButtons();
             if (moveModeEl.value === 'smooth') {
                 startSmoothMoveTo(lat, lng);
                 return;
             }
             smoothTarget = null;
+            clearSmoothVisuals();
             await sendLocation(lat, lng);
         }
 
         map.on('click', (e) => {
             const { lat, lng } = e.latlng;
+            if (drawRouteMode) {
+                addRoutePoint(lat, lng);
+                return;
+            }
             moveByMode(lat, lng);
         });
 
@@ -392,6 +608,60 @@ WEB_PAGE_HTML = """<!doctype html>
             }
             map.panTo([lat, lng]);
             await moveByMode(lat, lng);
+        });
+
+        drawRouteBtn.addEventListener('click', () => {
+            drawRouteMode = !drawRouteMode;
+            updateDrawRouteButton();
+            setStatus(drawRouteMode ? '路徑繪製模式：點地圖可新增路徑點' : '已離開路徑繪製模式');
+        });
+
+        clearRouteBtn.addEventListener('click', () => {
+            clearRoute();
+            setStatus('路徑已清空');
+        });
+
+        playRouteBtn.addEventListener('click', () => {
+            startRoutePlayback();
+        });
+
+        stopRouteBtn.addEventListener('click', () => {
+            stopRoutePlayback();
+            clearSmoothVisuals();
+        });
+
+        exportGpxBtn.addEventListener('click', () => {
+            if (routePoints.length < 2) {
+                setStatus('請先畫至少 2 個路徑點才能匯出 GPX', true);
+                return;
+            }
+            const gpx = buildGpx(routePoints);
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            downloadTextFile(`route-${stamp}.gpx`, gpx);
+            setStatus(`GPX 已匯出（${routePoints.length} 點）`);
+        });
+
+        importGpxBtn.addEventListener('click', () => {
+            gpxFileInput.click();
+        });
+
+        gpxFileInput.addEventListener('change', async () => {
+            const file = gpxFileInput.files && gpxFileInput.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                routePoints = parseGpxText(text);
+                updateRouteVisuals();
+                const first = routePoints[0];
+                const last = routePoints[routePoints.length - 1];
+                map.fitBounds([[first.lat, first.lng], [last.lat, last.lng]], { padding: [30, 30] });
+                setStatus(`GPX 匯入成功（${routePoints.length} 點）`);
+            } catch (err) {
+                setStatus(`GPX 匯入失敗: ${err.message}`, true);
+            } finally {
+                gpxFileInput.value = '';
+            }
         });
 
         function currentLatLng() {
@@ -433,7 +703,20 @@ WEB_PAGE_HTML = """<!doctype html>
                 if (dist <= STEP_METERS) {
                     nextLat = smoothTarget.lat;
                     nextLng = smoothTarget.lng;
-                    smoothTarget = null;
+                    if (routePlaybackActive) {
+                        routePlaybackIndex += 1;
+                        if (routePlaybackIndex < routePoints.length) {
+                            smoothTarget = routePoints[routePlaybackIndex];
+                        } else {
+                            routePlaybackActive = false;
+                            routePlaybackIndex = 0;
+                            smoothTarget = null;
+                            updatePlaybackButtons();
+                            setStatus(`路徑播放完成（速度上限 ${SPEED_KMH} km/h）`);
+                        }
+                    } else {
+                        smoothTarget = null;
+                    }
                     moved = true;
                 } else {
                     const nx = dxMeters / dist;
@@ -450,10 +733,17 @@ WEB_PAGE_HTML = """<!doctype html>
             }
 
             const clamped = clampLatLng(nextLat, nextLng);
-            map.panTo([clamped.lat, clamped.lng], { animate: false });
-            await sendLocation(clamped.lat, clamped.lng);
+            if (smoothTarget) {
+                updateSmoothVisuals(clamped, smoothTarget);
+            }
+            applyLocalPosition(clamped.lat, clamped.lng);
+            await sendLocation(clamped.lat, clamped.lng, { silent: true });
 
             if (pressed.size === 0 && !smoothTarget) {
+                if (targetLine) {
+                    map.removeLayer(targetLine);
+                    targetLine = null;
+                }
                 stopMoveTimerIfIdle();
             }
         }
@@ -482,6 +772,8 @@ WEB_PAGE_HTML = """<!doctype html>
             const key = evt.key.toLowerCase();
             if (!['w', 'a', 's', 'd'].includes(key)) return;
             evt.preventDefault();
+            routePlaybackActive = false;
+            updatePlaybackButtons();
             pressed.add(key);
             startMoveTimer();
         });
@@ -500,18 +792,26 @@ WEB_PAGE_HTML = """<!doctype html>
 
         moveModeEl.addEventListener('change', () => {
             if (moveModeEl.value === 'instant') {
+                routePlaybackActive = false;
+                updatePlaybackButtons();
                 smoothTarget = null;
+                clearSmoothVisuals();
             }
             setStatus(`模式: ${moveModeEl.value === 'smooth' ? '平滑移動' : '即時傳送'}，速度上限 ${SPEED_KMH} km/h`);
         });
 
         setInputs(25.033964, 121.564468);
+        updateDrawRouteButton();
+        updatePlaybackButtons();
         setStatus(`模式: 即時傳送，速度上限 ${SPEED_KMH} km/h`);
 
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (busy) return;
             busy = true;
+            routePlaybackActive = false;
+            updatePlaybackButtons();
             smoothTarget = null;
+            clearSmoothVisuals();
             setStatus('正在恢復真實位置...');
             try {
                 const res = await fetch('/api/clear-location', { method: 'POST' });
