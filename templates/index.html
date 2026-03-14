@@ -30,7 +30,7 @@
         .tools { display:flex; gap:8px; align-items:center; }
         .btn.tool { background:#1f2937; }
         .btn.tool.active { background:#b45309; }
-        #drawRouteBtn, #saveRouteBtn, #importGpxBtn, #exportGpxBtn { display:none; }
+        #drawRouteBtn, #clearRouteBtn, #playRouteBtn, #saveRouteBtn, #importGpxBtn, #exportGpxBtn { display:none; }
         #map { flex:1; }
         .easy-button-button { font-size:16px; line-height:26px; }
         .easy-button-button.active { background:#b45309; color:#fff; }
@@ -80,6 +80,7 @@
                 <input id="gpxFileInput" type="file" accept=".gpx,application/gpx+xml,text/xml,application/xml" style="display:none" />
             </div>
             <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
+            <button id="sessionToggleBtn" class="btn secondary">連線手機</button>
             <div id="status" class="status">點地圖或輸入經緯度即可更新手機定位</div>
             <button id="clearBtn" class="btn secondary">恢復真實位置</button>
         </div>
@@ -93,6 +94,7 @@
         const statusEl = document.getElementById('status');
         const sessionDot = document.getElementById('sessionDot');
         const sessionText = document.getElementById('sessionText');
+        const sessionToggleBtn = document.getElementById('sessionToggleBtn');
         const latInput = document.getElementById('latInput');
         const lngInput = document.getElementById('lngInput');
         const moveModeEl = document.getElementById('moveMode');
@@ -120,6 +122,7 @@
         }).addTo(map);
 
         let easyDrawRouteBtn = null;
+        let easyPlayRouteBtn = null;
 
         // Flower Logic
         const flowerAssetUrls = {
@@ -224,9 +227,11 @@
             if (connected) {
                 sessionDot.classList.add('ok');
                 sessionText.textContent = tunnelAlive ? '會話已連線（Tunnel 活躍）' : '會話已連線';
+                sessionToggleBtn.textContent = '中斷連線';
             } else {
                 sessionDot.classList.add('off');
                 sessionText.textContent = '會話已斷線';
+                sessionToggleBtn.textContent = '連線手機';
             }
         }
 
@@ -238,6 +243,26 @@
                 setSessionState(Boolean(data.connected), Boolean(data.tunnel_alive));
             } catch (err) {
                 setSessionState(false, false);
+            }
+        }
+
+        async function toggleSessionConnection() {
+            sessionToggleBtn.disabled = true;
+            try {
+                const res = await fetch('/api/session-toggle', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'toggle error');
+                setSessionState(Boolean(data.connected), Boolean(data.tunnel_alive));
+                if (data.connected) {
+                    setStatus('已連線到手機，可以開始模擬定位');
+                } else {
+                    setStatus('已中斷手機連線');
+                }
+            } catch (err) {
+                setStatus(`切換連線失敗: ${err.message}`, true);
+                await refreshSessionStatus();
+            } finally {
+                sessionToggleBtn.disabled = false;
             }
         }
 
@@ -560,6 +585,9 @@
         function updatePlaybackButtons() {
             playRouteBtn.classList.toggle('active', routePlaybackActive);
             playRouteBtn.textContent = routePlaybackActive ? '暫停路徑' : '播放路徑';
+            if (easyPlayRouteBtn) {
+                easyPlayRouteBtn.classList.toggle('active', routePlaybackActive);
+            }
         }
 
         function updateRouteVisuals() {
@@ -910,6 +938,10 @@
             toggleManageBtn.textContent = topBar.classList.contains('manage-open') ? '收合功能' : '更多功能';
         });
 
+        sessionToggleBtn.addEventListener('click', async () => {
+            await toggleSessionConnection();
+        });
+
         exportGpxBtn.addEventListener('click', () => {
             if (routePoints.length < 2) {
                 setStatus('請先畫至少 2 個路徑點才能匯出 GPX', true);
@@ -929,6 +961,12 @@
             L.easyButton('<span title="畫路徑">✎</span>', () => {
                 drawRouteBtn.click();
             }, '畫路徑'),
+            L.easyButton('<span title="清空路徑">⌫</span>', () => {
+                clearRouteBtn.click();
+            }, '清空路徑'),
+            L.easyButton('<span title="播放路徑">▶</span>', () => {
+                playRouteBtn.click();
+            }, '播放路徑'),
             L.easyButton('<span title="儲存路徑">💾</span>', () => {
                 saveRouteBtn.click();
             }, '儲存路徑'),
@@ -948,9 +986,11 @@
         }
 
         const easyButtons = document.querySelectorAll('.leaflet-control .easy-button-button');
-        if (easyButtons.length > 0) {
+        if (easyButtons.length >= 3) {
             easyDrawRouteBtn = easyButtons[0];
             easyDrawRouteBtn.classList.toggle('active', drawRouteMode);
+            easyPlayRouteBtn = easyButtons[2];
+            easyPlayRouteBtn.classList.toggle('active', routePlaybackActive);
         }
 
         gpxFileInput.addEventListener('change', async () => {

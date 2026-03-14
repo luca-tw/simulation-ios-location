@@ -181,6 +181,17 @@ class PersistentLocationSession:
             return
         raise ValueError(f"不支援的動作: {action}")
 
+    async def apply_when_connected(self, action: str, lat: float = None, lng: float = None) -> None:
+        if not self.connected or self.sim is None:
+            raise RuntimeError("尚未連線到手機，請先按「連線手機」。")
+        if action == "set":
+            await self.sim.set(lat, lng)
+            return
+        if action == "clear":
+            await self.sim.clear()
+            return
+        raise ValueError(f"不支援的動作: {action}")
+
     async def close(self) -> None:
 
         if self.sim is not None:
@@ -234,10 +245,31 @@ _session = PersistentLocationSession()
 
 async def _apply_location_action(action: str, lat: float = None, lng: float = None) -> None:
     try:
-        await _session.apply(action, lat, lng)
+        await _session.apply_when_connected(action, lat, lng)
     except Exception:
         await _session.close()
-        await _session.apply(action, lat, lng)
+        raise
+
+
+def connect_session() -> dict:
+    with _WEB_ACTION_LOCK:
+        _run_async(_session.ensure_connected())
+    return _session.status()
+
+
+def disconnect_session() -> dict:
+    global _WEB_LOCATION_SET
+    with _WEB_ACTION_LOCK:
+        _run_async(_session.close())
+    _WEB_LOCATION_SET = False
+    return _session.status()
+
+
+def toggle_session_connection() -> dict:
+    status = _session.status()
+    if status.get("connected"):
+        return disconnect_session()
+    return connect_session()
 
 
 def set_location(lat: float, lng: float) -> None:
@@ -249,6 +281,10 @@ def set_location(lat: float, lng: float) -> None:
 
 def clear_location() -> None:
     global _WEB_LOCATION_SET
+    status = _session.status()
+    if not status.get("connected"):
+        _WEB_LOCATION_SET = False
+        return
     with _WEB_ACTION_LOCK:
         _run_async(_apply_location_action("clear"))
     _WEB_LOCATION_SET = False

@@ -44,6 +44,36 @@ def api_session_status():
     return jsonify(location.get_session_status())
 
 
+@api_bp.post("/session-toggle")
+def api_session_toggle():
+    try:
+        status = location.toggle_session_connection()
+        return jsonify({"ok": True, **status})
+    except Exception as e:
+        location.logger.error(f"切換會話連線失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.post("/session-connect")
+def api_session_connect():
+    try:
+        status = location.connect_session()
+        return jsonify({"ok": True, **status})
+    except Exception as e:
+        location.logger.error(f"建立會話連線失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.post("/session-disconnect")
+def api_session_disconnect():
+    try:
+        status = location.disconnect_session()
+        return jsonify({"ok": True, **status})
+    except Exception as e:
+        location.logger.error(f"中斷會話連線失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.get("/settings")
 def api_get_settings():
     try:
