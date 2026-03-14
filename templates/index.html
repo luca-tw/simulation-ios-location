@@ -65,6 +65,7 @@
             </div>
             <div class="tools">
                 <button id="drawRouteBtn" class="btn tool">畫路徑</button>
+                <button id="markFlowerBtn" class="btn tool" style="background-color: #d97706;">種花</button>
                 <button id="clearRouteBtn" class="btn tool">清空路徑</button>
                 <button id="playRouteBtn" class="btn tool">播放路徑</button>
                 <button id="importGpxBtn" class="btn tool">匯入 GPX</button>
@@ -90,6 +91,7 @@
         const topBar = document.getElementById('topBar');
         const toggleManageBtn = document.getElementById('toggleManageBtn');
         const drawRouteBtn = document.getElementById('drawRouteBtn');
+        const markFlowerBtn = document.getElementById('markFlowerBtn');
         const clearRouteBtn = document.getElementById('clearRouteBtn');
         const playRouteBtn = document.getElementById('playRouteBtn');
         const favoriteSelect = document.getElementById('favoriteSelect');
@@ -109,6 +111,70 @@
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
+        // Flower Logic
+        const flowerAssetUrls = {
+            blue: '/assets/blue-flower.png',
+            red: '/assets/red-flower.png',
+            white: '/assets/white-flower.png',
+            yellow: '/assets/yellow-flower.png'
+        };
+        const flowerColors = Object.keys(flowerAssetUrls);
+        const flowerMarkers = [];
+
+        function getFlowerIcon(color) {
+            const url = flowerAssetUrls[color] || flowerAssetUrls.red;
+            return L.icon({
+                iconUrl: url,
+                iconSize: [40, 40],
+                iconAnchor: [20, 40],
+                popupAnchor: [0, -40]
+            });
+        }
+
+        function renderFlowerSpots() {
+            flowerMarkers.forEach(m => map.removeLayer(m));
+            flowerMarkers.length = 0;
+            
+            const spots = appSettings.flower_spots || [];
+            spots.forEach((spot, idx) => {
+                const icon = getFlowerIcon(spot.color);
+                const m = L.marker([spot.lat, spot.lng], { icon: icon }).addTo(map);
+                
+                const deleteBtn = `<br/><button onclick="deleteFlower(${idx})" style="color:white;background:#ef4444;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;margin-top:4px;">刪除</button>`;
+                m.bindPopup(`<b>${spot.name}</b>${deleteBtn}`);
+                flowerMarkers.push(m);
+            });
+            renderFavorites(); // Update dropdown
+        }
+
+        window.deleteFlower = function(idx) {
+            if (confirm('確定要刪除這朵花？')) {
+                appSettings.flower_spots.splice(idx, 1);
+                renderFlowerSpots();
+                saveSettingsPartial({ flower_spots: appSettings.flower_spots });
+            }
+        };
+
+        function addFlowerAt(lat, lng) {
+            const color = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+            const suggested = `小花-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
+            const name = window.prompt('請輸入花朵名稱', suggested);
+            if (name === null) return;
+            
+            const clamp = clampLatLng(lat, lng);
+            const spot = { name: (name || '').trim() || '未命名花朵', lat: clamp.lat, lng: clamp.lng, color };
+            if (!appSettings.flower_spots) appSettings.flower_spots = [];
+            appSettings.flower_spots.push(spot);
+            renderFlowerSpots();
+            saveSettingsPartial({ flower_spots: appSettings.flower_spots });
+            setStatus(`已種下一朵 ${color} 色的小花 (${spot.name})`);
+        }
+
+        function updateMarkFlowerButton() {
+            markFlowerBtn.classList.toggle('active', markFlowerMode);
+            markFlowerBtn.textContent = markFlowerMode ? '取消種花' : '種花模式';
+        }
+
         let marker = null;
         let busy = false;
         let pendingLocation = null;
@@ -123,6 +189,7 @@
         let targetMarker = null;
         let targetLine = null;
         let drawRouteMode = false;
+        let markFlowerMode = false;
         let routePoints = [];
         let routeLine = null;
         let routePlaybackActive = false;
@@ -131,6 +198,7 @@
             map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
             last_position: null,
             favorites: [],
+            flower_spots: [],
             saved_routes: [],
         };
         let settingsSaveTimer = null;
@@ -175,11 +243,20 @@
             favoriteSelect.innerHTML = '<option value="">收藏地點</option>';
             appSettings.favorites.forEach((fav, idx) => {
                 const option = document.createElement('option');
-                option.value = String(idx);
-                option.textContent = `${fav.name} (${fav.lat.toFixed(4)}, ${fav.lng.toFixed(4)})`;
+                option.value = `fav:${idx}`;
+                option.textContent = `★ ${fav.name} (${fav.lat.toFixed(4)}, ${fav.lng.toFixed(4)})`;
                 favoriteSelect.appendChild(option);
             });
-            if (prev && Number(prev) < appSettings.favorites.length) {
+            
+            // Flower list integration
+            appSettings.flower_spots.forEach((flower, idx) => {
+                const option = document.createElement('option');
+                option.value = `flower:${idx}`;
+                option.textContent = `✿ ${flower.name} (${flower.lat.toFixed(4)}, ${flower.lng.toFixed(4)})`;
+                favoriteSelect.appendChild(option);
+            });
+
+            if (prev) {
                 favoriteSelect.value = prev;
             }
         }
@@ -211,6 +288,7 @@
                     appSettings = data.settings;
                     renderFavorites();
                     renderRoutePresets();
+                    renderFlowerSpots();
                 }
             } catch (err) {
                 console.warn('save settings failed', err);
@@ -222,6 +300,7 @@
                 map: getMapState(),
                 last_position: currentLatLng(),
                 favorites: appSettings.favorites,
+                flower_spots: appSettings.flower_spots,
                 saved_routes: appSettings.saved_routes,
             };
 
@@ -261,6 +340,8 @@
                 appSettings = data;
                 renderFavorites();
                 renderRoutePresets();
+                renderFlowerSpots();
+                updateMarkFlowerButton();
 
                 if (appSettings.map && appSettings.map.center) {
                     const center = appSettings.map.center;
@@ -300,11 +381,12 @@
         }
 
         function deleteSelectedFavorite() {
-            const idx = Number(favoriteSelect.value);
-            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.favorites.length) {
+            const val = favoriteSelect.value;
+            if (!val || !val.startsWith('fav:')) {
                 setStatus('請先選擇要刪除的收藏地點', true);
                 return;
             }
+            const idx = Number(val.replace('fav:', ''));
             const name = appSettings.favorites[idx].name;
             appSettings.favorites.splice(idx, 1);
             renderFavorites();
@@ -652,6 +734,14 @@
         async function moveByMode(lat, lng) {
             routePlaybackActive = false;
             updatePlaybackButtons();
+            
+            if (markFlowerMode) {
+                addFlowerAt(lat, lng);
+                markFlowerMode = false;
+                updateMarkFlowerButton();
+                return;
+            }
+
             if (moveModeEl.value === 'instant') {
                 smoothTarget = null;
                 clearSmoothVisuals();
@@ -694,18 +784,35 @@
         });
 
         goFavoriteBtn.addEventListener('click', async () => {
-            const idx = Number(favoriteSelect.value);
-            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.favorites.length) {
+            const val = favoriteSelect.value;
+            if (!val) {
                 setStatus('請先選擇收藏地點', true);
                 return;
             }
-            const p = appSettings.favorites[idx];
-            map.panTo([p.lat, p.lng]);
-            await moveByMode(p.lat, p.lng);
+            if (val.startsWith('fav:')) {
+                const idx = Number(val.replace('fav:', ''));
+                if (idx < 0 || idx >= appSettings.favorites.length) return;
+                const p = appSettings.favorites[idx];
+                map.panTo([p.lat, p.lng]);
+                await moveByMode(p.lat, p.lng);
+            } else if (val.startsWith('flower:')) {
+                const idx = Number(val.replace('flower:', ''));
+                if (idx < 0 || idx >= appSettings.flower_spots.length) return;
+                const p = appSettings.flower_spots[idx];
+                map.panTo([p.lat, p.lng]);
+                await moveByMode(p.lat, p.lng);
+            }
         });
 
         deleteFavoriteBtn.addEventListener('click', () => {
-            deleteSelectedFavorite();
+            const val = favoriteSelect.value;
+            if (!val) return;
+            if (val.startsWith('fav:')) {
+                deleteSelectedFavorite();
+            } else if (val.startsWith('flower:')) {
+                const idx = Number(val.replace('flower:', ''));
+                deleteFlower(idx);
+            }
         });
 
         saveRouteBtn.addEventListener('click', () => {
@@ -729,8 +836,22 @@
 
         drawRouteBtn.addEventListener('click', () => {
             drawRouteMode = !drawRouteMode;
+            if (drawRouteMode) {
+                markFlowerMode = false;
+                updateMarkFlowerButton();
+            }
             updateDrawRouteButton();
             setStatus(drawRouteMode ? '路徑繪製模式：點地圖可新增路徑點' : '已離開路徑繪製模式');
+        });
+
+        markFlowerBtn.addEventListener('click', () => {
+            markFlowerMode = !markFlowerMode;
+            if (markFlowerMode) {
+                drawRouteMode = false;
+                updateDrawRouteButton();
+            }
+            updateMarkFlowerButton();
+            setStatus(markFlowerMode ? '種花模式：點擊地圖位置即可種花' : '已離開種花模式');
         });
 
         clearRouteBtn.addEventListener('click', () => {
