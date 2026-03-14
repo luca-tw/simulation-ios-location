@@ -41,8 +41,12 @@
                 <input id="latInput" type="number" step="any" placeholder="緯度 Lat" />
                 <input id="lngInput" type="number" step="any" placeholder="經度 Lng" />
                 <select id="moveMode">
-                    <option value="instant">即時傳送</option>
-                    <option value="smooth">平滑移動</option>
+                    <option value="walk">散步 (6km/h)</option>
+                    <option value="bike" selected>腳踏車 (18km/h)</option>
+                    <option value="scooter">機車 (60km/h)</option>
+                    <option value="car">汽車 (120km/h)</option>
+                    <option value="hsr">高鐵 (230km/h)</option>
+                    <option value="instant">快銀 (無速限)</option>
                 </select>
                 <button id="applyBtn" class="btn">套用座標</button>
                 <button id="toggleManageBtn" class="btn secondary">更多功能</button>
@@ -108,10 +112,11 @@
         let marker = null;
         let busy = false;
         let pendingLocation = null;
-        const SPEED_KMH = 18;
-        const SPEED_MPS = SPEED_KMH / 3.6;
+        let currentSpeedKmh = 18;
         const KEY_TICK_MS = 200;
-        const STEP_METERS = SPEED_MPS * (KEY_TICK_MS / 1000);
+        function getStepMeters() {
+            return (currentSpeedKmh / 3.6) * (KEY_TICK_MS / 1000);
+        }
         const pressed = new Set();
         let moveTimer = null;
         let smoothTarget = null;
@@ -485,7 +490,7 @@
             pendingLocation = null;
             updatePlaybackButtons();
             if (showStatus) {
-                setStatus(`已停止路徑播放（速度上限 ${SPEED_KMH} km/h）`);
+                setStatus(`已停止路徑播放（速度上限 ${currentSpeedKmh} km/h）`);
             }
         }
 
@@ -503,7 +508,7 @@
             updateSmoothVisuals(currentLatLng(), smoothTarget);
             updatePlaybackButtons();
             startMoveTimer();
-            setStatus(`開始沿路徑播放（速度上限 ${SPEED_KMH} km/h）`);
+            setStatus(`開始沿路徑播放（速度上限 ${currentSpeedKmh} km/h）`);
         }
 
         function buildGpx(points) {
@@ -622,7 +627,7 @@
                 if (!silent) {
                     scheduleSaveMapState();
                     saveSettingsPartial({ last_position: { lat, lng } });
-                    setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)} (WASD 最高 ${SPEED_KMH} km/h)`);
+                    setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)} (WASD 最高 ${currentSpeedKmh} km/h)`);
                     await refreshSessionStatus();
                 }
             } catch (err) {
@@ -647,13 +652,13 @@
         async function moveByMode(lat, lng) {
             routePlaybackActive = false;
             updatePlaybackButtons();
-            if (moveModeEl.value === 'smooth') {
-                startSmoothMoveTo(lat, lng);
+            if (moveModeEl.value === 'instant') {
+                smoothTarget = null;
+                clearSmoothVisuals();
+                await sendLocation(lat, lng);
                 return;
             }
-            smoothTarget = null;
-            clearSmoothVisuals();
-            await sendLocation(lat, lng);
+            startSmoothMoveTo(lat, lng);
         }
 
         map.on('click', (e) => {
@@ -805,8 +810,9 @@
             let nextLat = now.lat;
             let nextLng = now.lng;
             let moved = false;
-            const latStep = metersToLatDelta(STEP_METERS);
-            const lngStep = metersToLngDelta(STEP_METERS, now.lat);
+            const step = getStepMeters();
+            const latStep = metersToLatDelta(step);
+            const lngStep = metersToLngDelta(step, now.lat);
 
             const y = (pressed.has('w') ? 1 : 0) - (pressed.has('s') ? 1 : 0);
             const x = (pressed.has('d') ? 1 : 0) - (pressed.has('a') ? 1 : 0);
@@ -823,7 +829,7 @@
                 const dxMeters = (smoothTarget.lng - now.lng) * 111320 * Math.cos((now.lat * Math.PI) / 180);
                 const dist = Math.hypot(dxMeters, dyMeters);
 
-                if (dist <= STEP_METERS) {
+                if (dist <= step) {
                     nextLat = smoothTarget.lat;
                     nextLng = smoothTarget.lng;
                     if (routePlaybackActive) {
@@ -835,7 +841,7 @@
                             routePlaybackIndex = 0;
                             smoothTarget = null;
                             updatePlaybackButtons();
-                            setStatus(`路徑播放完成（速度上限 ${SPEED_KMH} km/h）`);
+                            setStatus(`路徑播放完成（速度上限 ${currentSpeedKmh} km/h）`);
                         }
                     } else {
                         smoothTarget = null;
@@ -844,8 +850,8 @@
                 } else {
                     const nx = dxMeters / dist;
                     const ny = dyMeters / dist;
-                    nextLat += metersToLatDelta(ny * STEP_METERS);
-                    nextLng += metersToLngDelta(nx * STEP_METERS, now.lat);
+                    nextLat += metersToLatDelta(ny * step);
+                    nextLng += metersToLngDelta(nx * step, now.lat);
                     moved = true;
                 }
             }
@@ -914,13 +920,27 @@
         });
 
         moveModeEl.addEventListener('change', () => {
-            if (moveModeEl.value === 'instant') {
-                routePlaybackActive = false;
-                updatePlaybackButtons();
+            const val = moveModeEl.value;
+            routePlaybackActive = false;
+            updatePlaybackButtons();
+
+            if (val === 'instant') {
                 smoothTarget = null;
                 clearSmoothVisuals();
+                currentSpeedKmh = 1000;
+                setStatus(`模式: 快銀 (無速限)`);
+            } else {
+                switch (val) {
+                    case 'walk': currentSpeedKmh = 6; break;
+                    case 'bike': currentSpeedKmh = 18; break;
+                    case 'scooter': currentSpeedKmh = 60; break;
+                    case 'car': currentSpeedKmh = 120; break;
+                    case 'hsr': currentSpeedKmh = 230; break;
+                    default: currentSpeedKmh = 18;
+                }
+                const label = moveModeEl.options[moveModeEl.selectedIndex].text;
+                setStatus(`模式: ${label}`);
             }
-            setStatus(`模式: ${moveModeEl.value === 'smooth' ? '平滑移動' : '即時傳送'}，速度上限 ${SPEED_KMH} km/h`);
         });
 
         map.on('moveend zoomend', scheduleSaveMapState);
@@ -936,7 +956,7 @@
             setInitialView(25.033964, 121.564468);
             updateDrawRouteButton();
             updatePlaybackButtons();
-            setStatus(`模式: 即時傳送，速度上限 ${SPEED_KMH} km/h`);
+            setStatus(`模式: 腳踏車，速度上限 ${currentSpeedKmh} km/h`);
             const hasPersistedSettings = await loadSettings();
             if (!hasPersistedSettings) {
                 initFromBrowserGps();
@@ -958,7 +978,7 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '清除失敗');
                 if (marker) { map.removeLayer(marker); marker = null; }
-                setStatus(`已恢復真實位置 (WASD 最高 ${SPEED_KMH} km/h)`);
+                setStatus(`已恢復真實位置 (WASD 最高 ${currentSpeedKmh} km/h)`);
                 await refreshSessionStatus();
             } catch (err) {
                 setStatus(`恢復失敗: ${err.message}`, true);
