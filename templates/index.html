@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>iOS 即時定位地圖</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-easybutton@2.4.0/src/easy-button.css" />
     <style>
         :root { --bg:#f5f7fb; --card:#ffffff; --ink:#102136; --muted:#5b6b7c; --brand:#0f766e; --warn:#b45309; }
         html, body { height: 100%; margin: 0; background: radial-gradient(circle at 20% 20%, #eef6ff, #f7fafc 60%, #eef2ff 100%); color: var(--ink); font-family: "Avenir Next", "PingFang TC", "Noto Sans TC", sans-serif; }
@@ -29,7 +30,13 @@
         .tools { display:flex; gap:8px; align-items:center; }
         .btn.tool { background:#1f2937; }
         .btn.tool.active { background:#b45309; }
+        #drawRouteBtn, #saveRouteBtn, #importGpxBtn, #exportGpxBtn { display:none; }
         #map { flex:1; }
+        .easy-button-button { font-size:16px; line-height:26px; }
+        .easy-button-button.active { background:#b45309; color:#fff; }
+        .route-easybar-midleft {
+            margin-top: 50vh;
+        }
         .hint { position:absolute; right:12px; bottom:12px; z-index:500; background:rgba(16,33,54,.88); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; }
     </style>
 </head>
@@ -81,6 +88,7 @@
     <div class="hint">資料來源: OpenStreetMap</div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet-easybutton@2.4.0/src/easy-button.js"></script>
     <script>
         const statusEl = document.getElementById('status');
         const sessionDot = document.getElementById('sessionDot');
@@ -110,6 +118,8 @@
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
+
+        let easyDrawRouteBtn = null;
 
         // Flower Logic
         const flowerAssetUrls = {
@@ -518,6 +528,9 @@
         function updateDrawRouteButton() {
             drawRouteBtn.classList.toggle('active', drawRouteMode);
             drawRouteBtn.textContent = drawRouteMode ? '結束繪製' : '畫路徑';
+            if (easyDrawRouteBtn) {
+                easyDrawRouteBtn.classList.toggle('active', drawRouteMode);
+            }
         }
 
         function updatePlaybackButtons() {
@@ -887,6 +900,34 @@
         importGpxBtn.addEventListener('click', () => {
             gpxFileInput.click();
         });
+
+        const routeEasyBar = L.easyBar([
+            L.easyButton('<span title="畫路徑">✎</span>', () => {
+                drawRouteBtn.click();
+            }, '畫路徑'),
+            L.easyButton('<span title="儲存路徑">💾</span>', () => {
+                saveRouteBtn.click();
+            }, '儲存路徑'),
+            L.easyButton('<span title="匯入 GPX">⤓</span>', () => {
+                importGpxBtn.click();
+            }, '匯入 GPX'),
+            L.easyButton('<span title="匯出 GPX">⤒</span>', () => {
+                exportGpxBtn.click();
+            }, '匯出 GPX')
+        ], {
+            position: 'topleft'
+        }).addTo(map);
+
+        const routeEasyBarContainer = routeEasyBar.getContainer();
+        if (routeEasyBarContainer) {
+            routeEasyBarContainer.classList.add('route-easybar-midleft');
+        }
+
+        const easyButtons = document.querySelectorAll('.leaflet-control .easy-button-button');
+        if (easyButtons.length > 0) {
+            easyDrawRouteBtn = easyButtons[0];
+            easyDrawRouteBtn.classList.toggle('active', drawRouteMode);
+        }
 
         gpxFileInput.addEventListener('change', async () => {
             const file = gpxFileInput.files && gpxFileInput.files[0];
