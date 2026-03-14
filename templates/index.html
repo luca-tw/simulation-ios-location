@@ -186,6 +186,7 @@
         }
 
         let marker = null;
+        let initialMarker = null;
         let busy = false;
         let pendingLocation = null;
         let currentSpeedKmh = 18;
@@ -498,9 +499,28 @@
             marker.setLatLng([clamped.lat, clamped.lng]);
         }
 
+        function markInitialPosition(lat, lng) {
+            const clamped = clampLatLng(lat, lng);
+            if (!initialMarker) {
+                initialMarker = L.circleMarker([clamped.lat, clamped.lng], {
+                    radius: 10,
+                    color: '#f59e0b',
+                    weight: 3,
+                    fillColor: '#fde68a',
+                    fillOpacity: 0.65,
+                }).addTo(map);
+                initialMarker.bindTooltip('初始位置', { permanent: true, direction: 'right', offset: [10, 0] });
+            } else {
+                initialMarker.setLatLng([clamped.lat, clamped.lng]);
+            }
+            initialMarker.bindPopup(`初始位置<br/>${clamped.lat.toFixed(6)}, ${clamped.lng.toFixed(6)}`);
+        }
+
         function initFromBrowserGps() {
+            return new Promise((resolve) => {
             if (!navigator.geolocation) {
                 setStatus('瀏覽器不支援 GPS，使用預設初始位置', true);
+                resolve(false);
                 return;
             }
 
@@ -510,12 +530,15 @@
                     const lat = pos.coords.latitude;
                     const lng = pos.coords.longitude;
                     setInitialView(lat, lng);
+                    markInitialPosition(lat, lng);
                     scheduleSaveMapState();
                     setStatus(`已使用網頁 GPS 作為初始位置: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                    resolve(true);
                 },
                 (err) => {
                     const msg = err && err.message ? err.message : '未知錯誤';
                     setStatus(`無法取得網頁 GPS，使用預設初始位置: ${msg}`, true);
+                    resolve(false);
                 },
                 {
                     enableHighAccuracy: true,
@@ -523,6 +546,7 @@
                     maximumAge: 30000,
                 }
             );
+            });
         }
 
         function updateDrawRouteButton() {
@@ -1119,10 +1143,8 @@
             updateDrawRouteButton();
             updatePlaybackButtons();
             setStatus(`模式: 腳踏車，速度上限 ${currentSpeedKmh} km/h`);
-            const hasPersistedSettings = await loadSettings();
-            if (!hasPersistedSettings) {
-                initFromBrowserGps();
-            }
+            await loadSettings();
+            await initFromBrowserGps();
         }
 
         bootstrap();
