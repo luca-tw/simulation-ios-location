@@ -176,12 +176,12 @@
         function renderFlowerSpots() {
             flowerMarkers.forEach(m => map.removeLayer(m));
             flowerMarkers.length = 0;
-            
+
             const spots = appSettings.flower_spots || [];
             spots.forEach((spot, idx) => {
                 const icon = getFlowerIcon(spot.color);
                 const m = L.marker([spot.lat, spot.lng], { icon: icon }).addTo(map);
-                
+
                 const deleteBtn = `<br/><button onclick="deleteFlower(${idx})" style="color:white;background:#ef4444;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;margin-top:4px;">刪除</button>`;
                 m.bindPopup(`<b>${spot.name}</b>${deleteBtn}`);
                 flowerMarkers.push(m);
@@ -202,7 +202,7 @@
             const suggested = `小花-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
             const name = window.prompt('請輸入花朵名稱', suggested);
             if (name === null) return;
-            
+
             const clamp = clampLatLng(lat, lng);
             const spot = { name: (name || '').trim() || '未命名花朵', lat: clamp.lat, lng: clamp.lng, color };
             if (!appSettings.flower_spots) appSettings.flower_spots = [];
@@ -228,14 +228,147 @@
             }
         }
 
+        function renderLocalTime() {
+            if (!localTimeDisplay) return;
+
+            if (!localTimezone) {
+                localTimeDisplay.textContent = '當地時間：--';
+                localTimeDisplay.style.color = '#334155';
+                localTimeDisplay.style.borderColor = '#d5dee8';
+                localTimeDisplay.style.background = '#fff';
+                return;
+            }
+
+            try {
+                const now = new Date();
+
+                let isDifferentDay = false;
+
+                if (baseTimezone && localTimezone) {
+                    const baseDate = new Intl.DateTimeFormat('en-CA', {
+                        timeZone: baseTimezone,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                    }).format(now);
+
+                    const localDate = new Intl.DateTimeFormat('en-CA', {
+                        timeZone: localTimezone,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                    }).format(now);
+
+                    isDifferentDay = baseDate !== localDate;
+                }
+
+                const formatted = new Intl.DateTimeFormat('zh-TW', {
+                    timeZone: localTimezone,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                }).format(now);
+
+                localTimeDisplay.textContent = isDifferentDay
+                    ? `當地時間：${formatted}（日期不同，請留意首頁步數）`
+                    : `當地時間：${formatted}`;
+
+                if (isDifferentDay) {
+                    localTimeDisplay.style.color = '#b91c1c';
+                    localTimeDisplay.style.borderColor = '#fca5a5';
+                    localTimeDisplay.style.background = '#fff1f2';
+                } else {
+                    localTimeDisplay.style.color = '#334155';
+                    localTimeDisplay.style.borderColor = '#d5dee8';
+                    localTimeDisplay.style.background = '#fff';
+                }
+            } catch (err) {
+                console.warn('renderLocalTime failed', err);
+                localTimeDisplay.textContent = '當地時間：取得失敗';
+                localTimeDisplay.style.color = '#334155';
+                localTimeDisplay.style.borderColor = '#d5dee8';
+                localTimeDisplay.style.background = '#fff';
+            }
+        }
+
+        function startLocalClock() {
+            if (localClockTimer) {
+                clearInterval(localClockTimer);
+            }
+            renderLocalTime();
+            localClockTimer = setInterval(renderLocalTime, 1000);
+        }
+
+        function shouldRefreshTimezone(lat, lng) {
+            if (lastTimezoneLookup.lat === null || lastTimezoneLookup.lng === null) {
+                return true;
+            }
+
+            const latDiff = Math.abs(lat - lastTimezoneLookup.lat);
+            const lngDiff = Math.abs(lng - lastTimezoneLookup.lng);
+
+            return latDiff > 0.2 || lngDiff > 0.2;
+        }
+
+        async function updateLocalTimezoneByLatLng(lat, lng, options = {}) {
+            const { setAsBase = false } = options;
+
+            try {
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&current=temperature_2m&timezone=auto`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.reason || data.error || 'timezone lookup failed');
+                }
+
+                if (!data.timezone) {
+                    throw new Error('找不到時區');
+                }
+
+                localTimezone = data.timezone;
+                lastTimezoneLookup = { lat, lng };
+
+                if (setAsBase || !baseTimezone) {
+                    baseTimezone = data.timezone;
+                }
+
+                startLocalClock();
+            } catch (err) {
+                console.warn('updateLocalTimezoneByLatLng failed', err);
+                localTimezone = null;
+                renderLocalTime();
+            }
+        }
+
+        function scheduleTimezoneRefresh(lat, lng, options = {}) {
+            const { force = false, setAsBase = false } = options;
+
+            if (!force && !shouldRefreshTimezone(lat, lng)) return;
+
+            if (timezoneLookupTimer) {
+                clearTimeout(timezoneLookupTimer);
+            }
+
+            timezoneLookupTimer = setTimeout(() => {
+                timezoneLookupTimer = null;
+                updateLocalTimezoneByLatLng(lat, lng, { setAsBase });
+            }, 250);
+        }
+
         let marker = null;
         let initialMarker = null;
         let busy = false;
-        let pendingLocation = null;
         let localTimezone = null;
+        let baseTimezone = null;
         let localClockTimer = null;
         let timezoneLookupTimer = null;
         let lastTimezoneLookup = { lat: null, lng: null };
+        let pendingLocation = null;
         let currentSpeedKmh = 18;
         const KEY_TICK_MS = 200;
         function getStepMeters() {
@@ -265,92 +398,6 @@
         function setStatus(text, warn = false) {
             statusEl.textContent = text;
             statusEl.style.color = warn ? '#b45309' : '#5b6b7c';
-        }
-
-
-        function renderLocalTime() {
-            if (!localTimeDisplay) return;
-
-            if (!localTimezone) {
-                localTimeDisplay.textContent = '當地時間：--';
-                return;
-            }
-
-            try {
-                const now = new Date();
-                const formatted = new Intl.DateTimeFormat('zh-TW', {
-                    timeZone: localTimezone,
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                }).format(now);
-
-                localTimeDisplay.textContent = `當地時間：${formatted}`;
-            } catch (err) {
-                console.warn('renderLocalTime failed', err);
-                localTimeDisplay.textContent = '當地時間：取得失敗';
-            }
-        }
-
-        function startLocalClock() {
-            if (localClockTimer) {
-                clearInterval(localClockTimer);
-            }
-            renderLocalTime();
-            localClockTimer = setInterval(renderLocalTime, 1000);
-        }
-
-        function shouldRefreshTimezone(lat, lng) {
-            if (lastTimezoneLookup.lat === null || lastTimezoneLookup.lng === null) {
-                return true;
-            }
-
-            const latDiff = Math.abs(lat - lastTimezoneLookup.lat);
-            const lngDiff = Math.abs(lng - lastTimezoneLookup.lng);
-
-            // 大約十幾到二十幾公里等級才重查，避免播放路徑時頻繁打 API
-            return latDiff > 0.2 || lngDiff > 0.2;
-        }
-
-        async function updateLocalTimezoneByLatLng(lat, lng) {
-            try {
-                const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&current=temperature_2m&timezone=auto`;
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (!res.ok) {
-                    throw new Error(data.reason || data.error || 'timezone lookup failed');
-                }
-
-                if (!data.timezone) {
-                    throw new Error('找不到時區');
-                }
-
-                localTimezone = data.timezone;
-                lastTimezoneLookup = { lat, lng };
-                startLocalClock();
-            } catch (err) {
-                console.warn('updateLocalTimezoneByLatLng failed', err);
-                localTimezone = null;
-                renderLocalTime();
-            }
-        }
-
-        function scheduleTimezoneRefresh(lat, lng) {
-            if (!shouldRefreshTimezone(lat, lng)) return;
-
-            if (timezoneLookupTimer) {
-                clearTimeout(timezoneLookupTimer);
-            }
-
-            timezoneLookupTimer = setTimeout(() => {
-                timezoneLookupTimer = null;
-                updateLocalTimezoneByLatLng(lat, lng);
-            }, 250);
         }
 
         function setSessionState(connected, tunnelAlive) {
@@ -414,7 +461,7 @@
                 option.textContent = `★ ${fav.name} (${fav.lat.toFixed(4)}, ${fav.lng.toFixed(4)})`;
                 favoriteSelect.appendChild(option);
             });
-            
+
             appSettings.flower_spots.forEach((flower, idx) => {
                 const option = document.createElement('option');
                 option.value = `flower:${idx}`;
@@ -553,7 +600,6 @@
                     const p = appSettings.last_position;
                     if (!marker) marker = L.marker([p.lat, p.lng]).addTo(map);
                     marker.setLatLng([p.lat, p.lng]);
-
                     scheduleTimezoneRefresh(p.lat, p.lng);
                 }
                 return Boolean(data._persisted);
@@ -712,34 +758,35 @@
 
         function initFromBrowserGps() {
             return new Promise((resolve) => {
-            if (!navigator.geolocation) {
-                setStatus('瀏覽器不支援 GPS，使用預設初始位置', true);
-                resolve(false);
-                return;
-            }
-
-            setStatus('正在請求網頁 GPS 位置...');
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lng = pos.coords.longitude;
-                    setInitialView(lat, lng);
-                    markInitialPosition(lat, lng);
-                    scheduleSaveMapState();
-                    setStatus(`已使用網頁 GPS 作為初始位置: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-                    resolve(true);
-                },
-                (err) => {
-                    const msg = err && err.message ? err.message : '未知錯誤';
-                    setStatus(`無法取得網頁 GPS，使用預設初始位置: ${msg}`, true);
+                if (!navigator.geolocation) {
+                    setStatus('瀏覽器不支援 GPS，使用預設初始位置', true);
                     resolve(false);
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 30000,
+                    return;
                 }
-            );
+
+                setStatus('正在請求網頁 GPS 位置...');
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const lat = pos.coords.latitude;
+                        const lng = pos.coords.longitude;
+                        setInitialView(lat, lng);
+                        markInitialPosition(lat, lng);
+                        scheduleTimezoneRefresh(lat, lng, { force: true, setAsBase: true });
+                        scheduleSaveMapState();
+                        setStatus(`已使用網頁 GPS 作為初始位置: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                        resolve(true);
+                    },
+                    (err) => {
+                        const msg = err && err.message ? err.message : '未知錯誤';
+                        setStatus(`無法取得網頁 GPS，使用預設初始位置: ${msg}`, true);
+                        resolve(false);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 30000,
+                    }
+                );
             });
         }
 
@@ -831,7 +878,7 @@
             const now = new Date().toISOString();
             const trkpts = points
                 .map((p) => `        <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><time>${now}</time></trkpt>`)
-                .join('\\n');
+                .join('\n');
 
             return `<?xml version="1.0" encoding="UTF-8"?>\n` +
                 `<gpx version="1.1" creator="simple-ios-location" xmlns="http://www.topografix.com/GPX/1/1">\n` +
@@ -970,7 +1017,7 @@
         async function moveByMode(lat, lng) {
             routePlaybackActive = false;
             updatePlaybackButtons();
-            
+
             if (markFlowerMode) {
                 addFlowerAt(lat, lng);
                 markFlowerMode = false;
@@ -1102,17 +1149,14 @@
                 pressed.clear();
                 stopMoveTimerIfIdle();
 
-                // 第一步：先快速跳回儲存位置
                 map.panTo([p.lat, p.lng]);
                 await sendLocation(p.lat, p.lng);
                 setStatus(`已跳回原始位置，正在解除 fake location...`);
 
-                // 第二步：再解除 fake location
                 const res = await fetch('/api/clear-location', { method: 'POST' });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '清除失敗');
 
-                // 可選：清掉前端 marker，讓後續由真實定位接手
                 if (marker) {
                     map.removeLayer(marker);
                     marker = null;
@@ -1161,8 +1205,7 @@
             if (val.startsWith('fav:')) {
                 deleteSelectedFavorite();
             } else if (val.startsWith('flower:')) {
-                const idx = Number(val.replace('flower:', ''));
-                deleteFlower(idx);
+                deleteFlower(Number(val.replace('flower:', '')));
             }
         });
 
@@ -1466,6 +1509,7 @@
 
         async function bootstrap() {
             setInitialView(25.033964, 121.564468);
+            scheduleTimezoneRefresh(25.033964, 121.564468, { force: true, setAsBase: true });
             updateDrawRouteButton();
             updatePlaybackButtons();
             renderOriginDisplay();
@@ -1477,28 +1521,31 @@
 
         bootstrap();
 
-        document.getElementById('clearBtn').addEventListener('click', async () => {
-            if (busy) return;
-            busy = true;
-            routePlaybackActive = false;
-            updatePlaybackButtons();
-            smoothTarget = null;
-            clearSmoothVisuals();
-            setStatus('正在恢復真實位置...');
-            try {
-                const res = await fetch('/api/clear-location', { method: 'POST' });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || '清除失敗');
-                if (marker) { map.removeLayer(marker); marker = null; }
-                setStatus(`已恢復真實位置 (WASD 最高 ${currentSpeedKmh} km/h)`);
-                await refreshSessionStatus();
-            } catch (err) {
-                setStatus(`恢復失敗: ${err.message}`, true);
-                await refreshSessionStatus();
-            } finally {
-                busy = false;
-            }
-        });
+        const clearBtn = document.getElementById('clearBtn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', async () => {
+                if (busy) return;
+                busy = true;
+                routePlaybackActive = false;
+                updatePlaybackButtons();
+                smoothTarget = null;
+                clearSmoothVisuals();
+                setStatus('正在恢復真實位置...');
+                try {
+                    const res = await fetch('/api/clear-location', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '清除失敗');
+                    if (marker) { map.removeLayer(marker); marker = null; }
+                    setStatus(`已恢復真實位置 (WASD 最高 ${currentSpeedKmh} km/h)`);
+                    await refreshSessionStatus();
+                } catch (err) {
+                    setStatus(`恢復失敗: ${err.message}`, true);
+                    await refreshSessionStatus();
+                } finally {
+                    busy = false;
+                }
+            });
+        }
 
         refreshSessionStatus();
         setInterval(refreshSessionStatus, 2000);
