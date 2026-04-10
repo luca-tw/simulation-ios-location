@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 
 web_map_state.json
+venv
