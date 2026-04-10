@@ -19,11 +19,30 @@
         .session-dot.off { background:#ef4444; }
         .btn { border:0; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:600; }
         .btn.secondary { background:#334155; }
-        .coord { display:flex; gap:8px; align-items:center; }
+        .coord { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
         .coord input { width:140px; border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
         .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
         .coord .fav-select { width:180px; }
         .coord .route-select { width:190px; }
+        .coord .coord-text-input { width:260px; }
+        .origin-pill {
+            display:flex;
+            align-items:center;
+            gap:6px;
+            padding:6px 10px;
+            border:1px solid #d5dee8;
+            border-radius:999px;
+            background:#fff;
+            font-size:12px;
+            color:#334155;
+            min-height: 18px;
+        }
+        .origin-pill.empty {
+            color: var(--warn);
+            border-color: #f1c27d;
+            background: #fffaf3;
+            font-weight: 600;
+        }
         .manage-item { display:none; }
         .top.manage-open .manage-item { display:inline-flex; }
         .top.manage-open select.manage-item { display:inline-block; }
@@ -47,15 +66,18 @@
             <div class="coord">
                 <input id="latInput" type="number" step="any" placeholder="緯度 Lat" />
                 <input id="lngInput" type="number" step="any" placeholder="經度 Lng" />
+                <input id="coordTextInput" class="coord-text-input" type="text" placeholder="可直接貼上 lat,lng 或多行座標" />
                 <select id="moveMode">
+                    <option value="instant" selected>直接跳轉</option>
                     <option value="walk">散步 (6km/h)</option>
-                    <option value="bike" selected>腳踏車 (18km/h)</option>
+                    <option value="bike">腳踏車 (18km/h)</option>
                     <option value="scooter">機車 (60km/h)</option>
                     <option value="car">汽車 (120km/h)</option>
                     <option value="hsr">高鐵 (230km/h)</option>
-                    <option value="instant">快銀 (無速限)</option>
                 </select>
                 <button id="applyBtn" class="btn">套用座標</button>
+                <button id="saveOriginBtn" class="btn secondary">儲存原始位置</button>
+                <button id="goOriginBtn" class="btn secondary">回到原始位置及狀態</button>
                 <button id="toggleManageBtn" class="btn secondary">更多功能</button>
                 <select id="favoriteSelect" class="fav-select manage-item">
                     <option value="">收藏地點</option>
@@ -81,8 +103,8 @@
             </div>
             <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
             <button id="sessionToggleBtn" class="btn secondary">連線手機</button>
+            <div id="originDisplay" class="origin-pill empty">尚未儲存原始位置</div>
             <div id="status" class="status">點地圖或輸入經緯度即可更新手機定位</div>
-            <button id="clearBtn" class="btn secondary">恢復真實位置</button>
         </div>
         <div id="map"></div>
     </div>
@@ -97,6 +119,7 @@
         const sessionToggleBtn = document.getElementById('sessionToggleBtn');
         const latInput = document.getElementById('latInput');
         const lngInput = document.getElementById('lngInput');
+        const coordTextInput = document.getElementById('coordTextInput');
         const moveModeEl = document.getElementById('moveMode');
         const topBar = document.getElementById('topBar');
         const toggleManageBtn = document.getElementById('toggleManageBtn');
@@ -115,6 +138,10 @@
         const importGpxBtn = document.getElementById('importGpxBtn');
         const exportGpxBtn = document.getElementById('exportGpxBtn');
         const gpxFileInput = document.getElementById('gpxFileInput');
+        const saveOriginBtn = document.getElementById('saveOriginBtn');
+        const goOriginBtn = document.getElementById('goOriginBtn');
+        const originDisplay = document.getElementById('originDisplay');
+
         const map = L.map('map', { zoomControl: true }).setView([25.033964, 121.564468], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
@@ -157,7 +184,7 @@
                 m.bindPopup(`<b>${spot.name}</b>${deleteBtn}`);
                 flowerMarkers.push(m);
             });
-            renderFavorites(); // Update dropdown
+            renderFavorites();
         }
 
         window.deleteFlower = function(idx) {
@@ -188,6 +215,17 @@
             markFlowerBtn.textContent = markFlowerMode ? '取消種花' : '種花模式';
         }
 
+        function renderOriginDisplay() {
+            const p = appSettings.origin_position;
+            if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
+                originDisplay.classList.remove('empty');
+                originDisplay.textContent = `已儲存原始位置: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+            } else {
+                originDisplay.classList.add('empty');
+                originDisplay.textContent = '尚未儲存原始位置';
+            }
+        }
+
         let marker = null;
         let initialMarker = null;
         let busy = false;
@@ -211,6 +249,7 @@
         let appSettings = {
             map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
             last_position: null,
+            origin_position: null,
             favorites: [],
             flower_spots: [],
             saved_routes: [],
@@ -284,7 +323,6 @@
                 favoriteSelect.appendChild(option);
             });
             
-            // Flower list integration
             appSettings.flower_spots.forEach((flower, idx) => {
                 const option = document.createElement('option');
                 option.value = `flower:${idx}`;
@@ -320,14 +358,35 @@
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'settings save error');
+
                 if (data.settings) {
-                    appSettings = data.settings;
-                    renderFavorites();
-                    renderRoutePresets();
-                    renderFlowerSpots();
+                    appSettings = {
+                        ...appSettings,
+                        ...data.settings,
+                        ...partial,
+                    };
+                } else {
+                    appSettings = {
+                        ...appSettings,
+                        ...partial,
+                    };
                 }
+
+                renderFavorites();
+                renderRoutePresets();
+                renderFlowerSpots();
+                renderOriginDisplay();
             } catch (err) {
                 console.warn('save settings failed', err);
+
+                appSettings = {
+                    ...appSettings,
+                    ...partial,
+                };
+                renderFavorites();
+                renderRoutePresets();
+                renderFlowerSpots();
+                renderOriginDisplay();
             }
         }
 
@@ -335,6 +394,7 @@
             const payload = {
                 map: getMapState(),
                 last_position: currentLatLng(),
+                origin_position: appSettings.origin_position,
                 favorites: appSettings.favorites,
                 flower_spots: appSettings.flower_spots,
                 saved_routes: appSettings.saved_routes,
@@ -373,10 +433,21 @@
                 const res = await fetch('/api/settings');
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'settings load error');
-                appSettings = data;
+
+                appSettings = {
+                    map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
+                    last_position: null,
+                    origin_position: null,
+                    favorites: [],
+                    flower_spots: [],
+                    saved_routes: [],
+                    ...data,
+                };
+
                 renderFavorites();
                 renderRoutePresets();
                 renderFlowerSpots();
+                renderOriginDisplay();
                 updateMarkFlowerButton();
 
                 if (appSettings.map && appSettings.map.center) {
@@ -394,6 +465,7 @@
                 return Boolean(data._persisted);
             } catch (err) {
                 setStatus(`讀取設定失敗，使用預設值`, true);
+                renderOriginDisplay();
                 return false;
             }
         }
@@ -514,6 +586,7 @@
         function setInputs(lat, lng) {
             latInput.value = Number(lat).toFixed(6);
             lngInput.value = Number(lng).toFixed(6);
+            coordTextInput.value = `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
         }
 
         function setInitialView(lat, lng) {
@@ -816,6 +889,42 @@
             startSmoothMoveTo(lat, lng);
         }
 
+        function parseCoordinateText(raw) {
+            const text = String(raw || '').trim();
+            if (!text) return null;
+
+            const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+            for (const line of lines.length ? lines : [text]) {
+                const match = line.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+                if (!match) continue;
+
+                const lat = Number(match[1]);
+                const lng = Number(match[2]);
+
+                if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
+                if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+
+                return { lat, lng };
+            }
+
+            return null;
+        }
+
+        function tryFillInputsFromCoordText(showError = false) {
+            const parsed = parseCoordinateText(coordTextInput.value);
+            if (!parsed) {
+                if (showError && coordTextInput.value.trim()) {
+                    setStatus('座標格式錯誤，請使用 lat,lng', true);
+                }
+                return false;
+            }
+
+            latInput.value = parsed.lat.toFixed(6);
+            lngInput.value = parsed.lng.toFixed(6);
+            return true;
+        }
+
         map.on('click', (e) => {
             const { lat, lng } = e.latlng;
             if (drawRouteMode) {
@@ -826,8 +935,16 @@
         });
 
         document.getElementById('applyBtn').addEventListener('click', async () => {
-            const lat = Number(latInput.value);
-            const lng = Number(lngInput.value);
+            let lat = Number(latInput.value);
+            let lng = Number(lngInput.value);
+
+            const parsed = parseCoordinateText(coordTextInput.value);
+            if (parsed) {
+                lat = parsed.lat;
+                lng = parsed.lng;
+                setInputs(lat, lng);
+            }
+
             if (Number.isNaN(lat) || Number.isNaN(lng)) {
                 setStatus('請先輸入有效經緯度', true);
                 return;
@@ -838,6 +955,77 @@
             }
             map.panTo([lat, lng]);
             await moveByMode(lat, lng);
+        });
+
+        coordTextInput.addEventListener('paste', () => {
+            setTimeout(() => {
+                tryFillInputsFromCoordText(false);
+            }, 0);
+        });
+
+        coordTextInput.addEventListener('blur', () => {
+            tryFillInputsFromCoordText(false);
+        });
+
+        coordTextInput.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Enter') {
+                evt.preventDefault();
+                const ok = tryFillInputsFromCoordText(true);
+                if (ok) {
+                    document.getElementById('applyBtn').click();
+                }
+            }
+        });
+
+        saveOriginBtn.addEventListener('click', async () => {
+            const p = currentLatLng();
+            const origin = { lat: p.lat, lng: p.lng };
+
+            appSettings.origin_position = origin;
+            renderOriginDisplay();
+            setStatus(`已儲存原始位置: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`);
+
+            await saveSettingsPartial({ origin_position: origin });
+        });
+
+        goOriginBtn.addEventListener('click', async () => {
+            const p = appSettings.origin_position;
+            if (!p || typeof p.lat !== 'number' || typeof p.lng !== 'number') {
+                setStatus('尚未儲存原始位置', true);
+                return;
+            }
+
+            try {
+                routePlaybackActive = false;
+                updatePlaybackButtons();
+                smoothTarget = null;
+                pendingLocation = null;
+                clearSmoothVisuals();
+                pressed.clear();
+                stopMoveTimerIfIdle();
+
+                // 第一步：先快速跳回儲存位置
+                map.panTo([p.lat, p.lng]);
+                await sendLocation(p.lat, p.lng);
+                setStatus(`已跳回原始位置，正在解除 fake location...`);
+
+                // 第二步：再解除 fake location
+                const res = await fetch('/api/clear-location', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '清除失敗');
+
+                // 可選：清掉前端 marker，讓後續由真實定位接手
+                if (marker) {
+                    map.removeLayer(marker);
+                    marker = null;
+                }
+
+                setStatus(`已回到原始位置，並解除 fake location`);
+                await refreshSessionStatus();
+            } catch (err) {
+                setStatus(`回到原始位置失敗: ${err.message}`, true);
+                await refreshSessionStatus();
+            }
         });
 
         saveFavoriteBtn.addEventListener('click', () => {
@@ -1154,7 +1342,7 @@
                 smoothTarget = null;
                 clearSmoothVisuals();
                 currentSpeedKmh = 1000;
-                setStatus(`模式: 快銀 (無速限)`);
+                setStatus(`模式: 直接跳轉`);
             } else {
                 switch (val) {
                     case 'walk': currentSpeedKmh = 6; break;
@@ -1182,6 +1370,7 @@
             setInitialView(25.033964, 121.564468);
             updateDrawRouteButton();
             updatePlaybackButtons();
+            renderOriginDisplay();
             setStatus(`模式: 腳踏車，速度上限 ${currentSpeedKmh} km/h`);
             await loadSettings();
             await initFromBrowserGps();
