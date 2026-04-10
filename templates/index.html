@@ -104,6 +104,7 @@
             <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
             <button id="sessionToggleBtn" class="btn secondary">連線手機</button>
             <div id="originDisplay" class="origin-pill empty">尚未儲存原始位置</div>
+            <div id="localTimeDisplay" class="origin-pill">當地時間：--</div>
             <div id="status" class="status">點地圖或輸入經緯度即可更新手機定位</div>
         </div>
         <div id="map"></div>
@@ -141,6 +142,7 @@
         const saveOriginBtn = document.getElementById('saveOriginBtn');
         const goOriginBtn = document.getElementById('goOriginBtn');
         const originDisplay = document.getElementById('originDisplay');
+        const localTimeDisplay = document.getElementById('localTimeDisplay');
 
         const map = L.map('map', { zoomControl: true }).setView([25.033964, 121.564468], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -230,6 +232,10 @@
         let initialMarker = null;
         let busy = false;
         let pendingLocation = null;
+        let localTimezone = null;
+        let localClockTimer = null;
+        let timezoneLookupTimer = null;
+        let lastTimezoneLookup = { lat: null, lng: null };
         let currentSpeedKmh = 18;
         const KEY_TICK_MS = 200;
         function getStepMeters() {
@@ -259,6 +265,92 @@
         function setStatus(text, warn = false) {
             statusEl.textContent = text;
             statusEl.style.color = warn ? '#b45309' : '#5b6b7c';
+        }
+
+
+        function renderLocalTime() {
+            if (!localTimeDisplay) return;
+
+            if (!localTimezone) {
+                localTimeDisplay.textContent = '當地時間：--';
+                return;
+            }
+
+            try {
+                const now = new Date();
+                const formatted = new Intl.DateTimeFormat('zh-TW', {
+                    timeZone: localTimezone,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                }).format(now);
+
+                localTimeDisplay.textContent = `當地時間：${formatted}`;
+            } catch (err) {
+                console.warn('renderLocalTime failed', err);
+                localTimeDisplay.textContent = '當地時間：取得失敗';
+            }
+        }
+
+        function startLocalClock() {
+            if (localClockTimer) {
+                clearInterval(localClockTimer);
+            }
+            renderLocalTime();
+            localClockTimer = setInterval(renderLocalTime, 1000);
+        }
+
+        function shouldRefreshTimezone(lat, lng) {
+            if (lastTimezoneLookup.lat === null || lastTimezoneLookup.lng === null) {
+                return true;
+            }
+
+            const latDiff = Math.abs(lat - lastTimezoneLookup.lat);
+            const lngDiff = Math.abs(lng - lastTimezoneLookup.lng);
+
+            // 大約十幾到二十幾公里等級才重查，避免播放路徑時頻繁打 API
+            return latDiff > 0.2 || lngDiff > 0.2;
+        }
+
+        async function updateLocalTimezoneByLatLng(lat, lng) {
+            try {
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&current=temperature_2m&timezone=auto`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.reason || data.error || 'timezone lookup failed');
+                }
+
+                if (!data.timezone) {
+                    throw new Error('找不到時區');
+                }
+
+                localTimezone = data.timezone;
+                lastTimezoneLookup = { lat, lng };
+                startLocalClock();
+            } catch (err) {
+                console.warn('updateLocalTimezoneByLatLng failed', err);
+                localTimezone = null;
+                renderLocalTime();
+            }
+        }
+
+        function scheduleTimezoneRefresh(lat, lng) {
+            if (!shouldRefreshTimezone(lat, lng)) return;
+
+            if (timezoneLookupTimer) {
+                clearTimeout(timezoneLookupTimer);
+            }
+
+            timezoneLookupTimer = setTimeout(() => {
+                timezoneLookupTimer = null;
+                updateLocalTimezoneByLatLng(lat, lng);
+            }, 250);
         }
 
         function setSessionState(connected, tunnelAlive) {
@@ -461,6 +553,8 @@
                     const p = appSettings.last_position;
                     if (!marker) marker = L.marker([p.lat, p.lng]).addTo(map);
                     marker.setLatLng([p.lat, p.lng]);
+
+                    scheduleTimezoneRefresh(p.lat, p.lng);
                 }
                 return Boolean(data._persisted);
             } catch (err) {
@@ -595,6 +689,8 @@
             map.setView([clamped.lat, clamped.lng], 16, { animate: false });
             if (!marker) marker = L.marker([clamped.lat, clamped.lng]).addTo(map);
             marker.setLatLng([clamped.lat, clamped.lng]);
+
+            scheduleTimezoneRefresh(clamped.lat, clamped.lng);
         }
 
         function markInitialPosition(lat, lng) {
@@ -821,6 +917,8 @@
             marker.setLatLng([lat, lng]);
             setInputs(lat, lng);
             map.panTo([lat, lng], { animate: false });
+
+            scheduleTimezoneRefresh(lat, lng);
         }
 
         async function sendLocation(lat, lng, options = {}) {
@@ -1371,6 +1469,7 @@
             updateDrawRouteButton();
             updatePlaybackButtons();
             renderOriginDisplay();
+            renderLocalTime();
             setStatus(`模式: 腳踏車，速度上限 ${currentSpeedKmh} km/h`);
             await loadSettings();
             await initFromBrowserGps();
