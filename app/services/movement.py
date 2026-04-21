@@ -80,15 +80,14 @@ async def _apply_to_device(lat: float, lng: float) -> None:
 
 async def _cancel_current_task() -> None:
     task = _state.task
+    _state.task = None
     if task is None or task.done():
-        _state.task = None
         return
     task.cancel()
     try:
-        await task
-    except (asyncio.CancelledError, Exception):
+        await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
+    except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
         pass
-    _state.task = None
 
 
 async def _run_move_to(target_lat: float, target_lng: float, move_type: str) -> None:
@@ -225,13 +224,20 @@ async def _stop_coro() -> None:
 
 async def _set_instant_coro(lat: float, lng: float) -> None:
     await _cancel_current_task()
-    async with _state.lock():
-        await _apply_to_device(lat, lng)
+    logger.info(f"instant jump -> {lat}, {lng}")
+    try:
+        async with _state.lock():
+            await _apply_to_device(lat, lng)
+    except Exception as e:
+        logger.error(f"instant jump 失敗: {e}")
+        _state.last_error = str(e)
+        raise
     _state.current_lat, _state.current_lng = lat, lng
     _state.mode = "idle"
     _state.target_lat = None
     _state.target_lng = None
     _state.last_error = None
+    logger.info("instant jump 完成")
 
 
 def start_move(lat: float, lng: float, move_type: str) -> dict:

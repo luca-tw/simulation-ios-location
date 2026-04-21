@@ -32,9 +32,18 @@ _bg_thread = threading.Thread(target=_loop_thread_run, daemon=True)
 _bg_thread.start()
 
 
-def _run_async(coro):
+def _run_async(coro, timeout: float = None):
     future = asyncio.run_coroutine_threadsafe(coro, _loop)
-    return future.result()
+    return future.result(timeout=timeout)
+
+
+def _stop_background_loop(timeout: float = 1.0) -> None:
+    try:
+        _loop.call_soon_threadsafe(_loop.stop)
+    except Exception:
+        pass
+    if _bg_thread.is_alive():
+        _bg_thread.join(timeout=timeout)
 
 
 class RobustRemoteServiceDiscoveryService(RemoteServiceDiscoveryService):
@@ -360,17 +369,25 @@ def safe_clear_on_shutdown() -> None:
     if not _WEB_LOCATION_SET:
         try:
             with _WEB_ACTION_LOCK:
-                _run_async(_session.close())
+                _run_async(_session.close(), timeout=2.0)
         except Exception:
             pass
+        _stop_background_loop()
         return
 
     try:
         with _WEB_ACTION_LOCK:
-            _run_async(_apply_location_action("clear"))
-            _run_async(_session.close())
+            try:
+                _run_async(_apply_location_action("clear"), timeout=2.0)
+            except Exception as e:
+                logger.warning(f"清除定位逾時或失敗，續行關閉: {e}")
+            try:
+                _run_async(_session.close(), timeout=2.0)
+            except Exception as e:
+                logger.warning(f"關閉 session 逾時或失敗: {e}")
         logger.info("Web 模式結束前已恢復真實位置。")
     except Exception as e:
         logger.error(f"Web 模式關閉時恢復位置失敗: {e}")
     finally:
         _WEB_LOCATION_SET = False
+        _stop_background_loop()

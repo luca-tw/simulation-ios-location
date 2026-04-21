@@ -1,8 +1,8 @@
 import atexit
 import logging
 import os
-import signal
 import sys
+import threading
 
 from app.factory import create_app
 from app.api.routes import safe_shutdown
@@ -12,13 +12,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def _handle_termination_signal(signum, frame):
+_shutdown_done = threading.Event()
+
+
+def _run_shutdown_once():
+    if _shutdown_done.is_set():
+        return
+    _shutdown_done.set()
     try:
         safe_shutdown()
+        logger.info("已完成關閉清理")
     except Exception as e:
         logger.error(f"結束前清理失敗: {e}")
-    logger.info(f"收到結束訊號 ({signum})，正在停止模擬...")
-    raise KeyboardInterrupt
 
 
 if __name__ == "__main__":
@@ -30,11 +35,13 @@ if __name__ == "__main__":
 
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    signal.signal(signal.SIGINT, _handle_termination_signal)
-    if hasattr(signal, "SIGTERM"):
-        signal.signal(signal.SIGTERM, _handle_termination_signal)
-
-    atexit.register(safe_shutdown)
+    atexit.register(_run_shutdown_once)
     app = create_app()
     logger.info(f"Web 模式啟動: http://{host}:{port}")
-    app.run(host=host, port=port, debug=False)
+    try:
+        app.run(host=host, port=port, debug=False)
+    except KeyboardInterrupt:
+        logger.info("收到 Ctrl+C，停止中...")
+    finally:
+        _run_shutdown_once()
+        os._exit(0)
