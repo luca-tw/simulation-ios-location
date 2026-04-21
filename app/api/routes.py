@@ -2,7 +2,7 @@ import os
 
 from flask import Blueprint, jsonify, request
 
-from app.services import location
+from app.services import location, movement
 from app.services.settings import SETTINGS_FILE, load_settings, merge_settings
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -21,7 +21,7 @@ def api_set_location():
         return jsonify({"error": "經緯度超出範圍"}), 400
 
     try:
-        location.set_location(lat, lng)
+        movement.set_instant(lat, lng)
         merge_settings({"last_position": {"lat": lat, "lng": lng}})
         return jsonify({"ok": True, "lat": lat, "lng": lng})
     except Exception as e:
@@ -29,9 +29,65 @@ def api_set_location():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.post("/move")
+def api_move():
+    data = request.get_json(silent=True) or {}
+    try:
+        lat = float(data.get("lat"))
+        lng = float(data.get("lng"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "lat/lng 格式錯誤"}), 400
+
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return jsonify({"error": "經緯度超出範圍"}), 400
+
+    mode = str(data.get("mode") or "instant")
+    try:
+        status = movement.start_move(lat, lng, mode)
+        merge_settings({"last_position": {"lat": lat, "lng": lng}})
+        return jsonify({"ok": True, **status})
+    except Exception as e:
+        location.logger.error(f"啟動移動失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.post("/play-route")
+def api_play_route():
+    data = request.get_json(silent=True) or {}
+    points = data.get("points")
+    mode = str(data.get("mode") or "walk")
+    if not isinstance(points, list):
+        return jsonify({"error": "points 必須為陣列"}), 400
+
+    try:
+        status = movement.start_route(points, mode)
+        return jsonify({"ok": True, **status})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        location.logger.error(f"啟動路徑播放失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.post("/stop-movement")
+def api_stop_movement():
+    try:
+        status = movement.stop()
+        return jsonify({"ok": True, **status})
+    except Exception as e:
+        location.logger.error(f"停止移動失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.get("/movement-status")
+def api_movement_status():
+    return jsonify(movement.status())
+
+
 @api_bp.post("/clear-location")
 def api_clear_location():
     try:
+        movement.stop()
         location.clear_location()
         return jsonify({"ok": True})
     except Exception as e:
@@ -56,11 +112,52 @@ def api_session_toggle():
 
 @api_bp.post("/session-connect")
 def api_session_connect():
+    data = request.get_json(silent=True) or {}
+    udid = data.get("udid") if isinstance(data, dict) else None
     try:
-        status = location.connect_session()
+        status = location.connect_session(udid)
         return jsonify({"ok": True, **status})
     except Exception as e:
         location.logger.error(f"建立會話連線失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.get("/devices")
+def api_list_devices():
+    try:
+        devices = location.list_available_devices()
+        return jsonify({"devices": devices})
+    except Exception as e:
+        location.logger.error(f"列出裝置失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.post("/devices/active")
+def api_set_active_device():
+    data = request.get_json(silent=True) or {}
+    udid = str(data.get("udid") or "").strip()
+    if not udid:
+        return jsonify({"error": "udid 為必填"}), 400
+    try:
+        result = location.set_active_device(udid)
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        location.logger.error(f"設定 active 裝置失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.post("/devices/name")
+def api_rename_device():
+    data = request.get_json(silent=True) or {}
+    udid = str(data.get("udid") or "").strip()
+    name = str(data.get("name") or "").strip()
+    if not udid:
+        return jsonify({"error": "udid 為必填"}), 400
+    try:
+        result = location.rename_device(udid, name)
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        location.logger.error(f"重新命名裝置失敗: {e}")
         return jsonify({"error": str(e)}), 500
 
 

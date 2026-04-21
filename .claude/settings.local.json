@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\), f\\) for f in ['app/services/settings.py','app/services/location.py','app/services/movement.py','app/api/routes.py']]; print\\('syntax ok'\\)\")",
+      "Bash(python3 -c \"import pymobiledevice3; print\\(pymobiledevice3.__version__\\)\")"
+    ]
+  }
+}

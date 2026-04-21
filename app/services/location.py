@@ -14,6 +14,8 @@ from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
 from pymobiledevice3.usbmux import list_devices
 
+from app.services.settings import load_settings, merge_settings
+
 logger = logging.getLogger(__name__)
 
 _WEB_ACTION_LOCK = threading.Lock()
@@ -104,16 +106,31 @@ class PersistentLocationSession:
         self.tunnel_thread = None
         self.tunnel_stop_event = None
         self.connected = False
+        self.udid = None
 
-    async def ensure_connected(self) -> None:
+    async def ensure_connected(self, udid: str = None) -> None:
         if self.connected:
-            return
+            if udid is None or udid == self.udid:
+                return
+            await self.close()
 
         devices = await list_devices()
         if not devices:
             raise RuntimeError("未找到 iOS 裝置。請確認已連接並信任電腦。")
 
-        udid = devices[0].serial
+        if udid is None:
+            settings = load_settings()
+            udid = settings.get("active_udid")
+
+        if udid:
+            match = next((d for d in devices if d.serial == udid), None)
+            if match is None:
+                raise RuntimeError(f"找不到指定的裝置 {udid}，請確認已連接並信任電腦。")
+            udid = match.serial
+        else:
+            udid = devices[0].serial
+
+        self.udid = udid
         logger.info(f"發現裝置: {udid}")
 
         self.lockdown = await create_using_usbmux(udid)
@@ -231,12 +248,15 @@ class PersistentLocationSession:
                 pass
             self.lockdown = None
 
+        self.udid = None
+
     def status(self) -> dict:
         tunnel_alive = self.tunnel_thread.is_alive() if self.tunnel_thread is not None else False
         return {
             "connected": bool(self.connected),
             "tunnel_alive": bool(tunnel_alive),
             "has_sim": self.sim is not None,
+            "udid": self.udid,
         }
 
 
@@ -251,9 +271,9 @@ async def _apply_location_action(action: str, lat: float = None, lng: float = No
         raise
 
 
-def connect_session() -> dict:
+def connect_session(udid: str = None) -> dict:
     with _WEB_ACTION_LOCK:
-        _run_async(_session.ensure_connected())
+        _run_async(_session.ensure_connected(udid))
     return _session.status()
 
 
@@ -292,6 +312,47 @@ def clear_location() -> None:
 
 def get_session_status() -> dict:
     return _session.status()
+
+
+def list_available_devices() -> list:
+    raw = _run_async(list_devices())
+    settings = load_settings()
+    names = settings.get("devices", {}) or {}
+    active_udid = settings.get("active_udid")
+    current_udid = _session.udid
+    result = []
+    for d in raw:
+        udid = d.serial
+        info = names.get(udid) or {}
+        result.append({
+            "udid": udid,
+            "name": info.get("name") or "",
+            "is_active": udid == active_udid,
+            "is_connected": udid == current_udid and _session.connected,
+        })
+    return result
+
+
+def set_active_device(udid: str) -> dict:
+    settings = load_settings()
+    devices = settings.get("devices", {}) or {}
+    if udid not in devices:
+        devices[udid] = {"name": ""}
+    merge_settings({"active_udid": udid, "devices": devices})
+
+    if _session.connected and _session.udid != udid:
+        with _WEB_ACTION_LOCK:
+            _run_async(_session.close())
+
+    return {"active_udid": udid}
+
+
+def rename_device(udid: str, name: str) -> dict:
+    settings = load_settings()
+    devices = dict(settings.get("devices", {}) or {})
+    devices[udid] = {"name": (name or "").strip()[:64]}
+    saved = merge_settings({"devices": devices})
+    return {"devices": saved.get("devices", {})}
 
 
 def safe_clear_on_shutdown() -> None:

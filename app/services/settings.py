@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from pathlib import Path
 import threading
 
@@ -8,6 +9,8 @@ logger = logging.getLogger(__name__)
 _SETTINGS_LOCK = threading.Lock()
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SETTINGS_FILE = _PROJECT_ROOT / "web_map_state.json"
+
+_UDID_RE = re.compile(r"^[A-Za-z0-9-]{6,64}$")
 
 
 def default_settings() -> dict:
@@ -20,6 +23,8 @@ def default_settings() -> dict:
         "favorites": [],
         "flower_spots": [],
         "saved_routes": [],
+        "devices": {},
+        "active_udid": None,
     }
 
 
@@ -123,6 +128,22 @@ def sanitize_settings(raw: dict) -> dict:
 
         settings["saved_routes"] = cleaned_routes[:100]
 
+    devices = raw.get("devices")
+    if isinstance(devices, dict):
+        cleaned_devices = {}
+        for udid, info in devices.items():
+            if not isinstance(udid, str) or not _UDID_RE.match(udid):
+                continue
+            if not isinstance(info, dict):
+                continue
+            name = str(info.get("name", "")).strip()[:64]
+            cleaned_devices[udid] = {"name": name}
+        settings["devices"] = cleaned_devices
+
+    active_udid = raw.get("active_udid")
+    if isinstance(active_udid, str) and _UDID_RE.match(active_udid):
+        settings["active_udid"] = active_udid
+
     return settings
 
 
@@ -162,5 +183,9 @@ def merge_settings(update: dict) -> dict:
         current["flower_spots"] = update["flower_spots"]
     if "saved_routes" in update and isinstance(update["saved_routes"], list):
         current["saved_routes"] = update["saved_routes"]
+    if "devices" in update and isinstance(update["devices"], dict):
+        current["devices"] = update["devices"]
+    if "active_udid" in update:
+        current["active_udid"] = update["active_udid"]
 
     return save_settings(current)

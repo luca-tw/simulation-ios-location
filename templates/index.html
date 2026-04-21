@@ -20,11 +20,15 @@
         .btn { border:0; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:600; }
         .btn.secondary { background:#334155; }
         .coord { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-        .coord input { width:140px; border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
+        .coord input { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
         .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
         .coord .fav-select { width:180px; }
         .coord .route-select { width:190px; }
-        .coord .coord-text-input { width:260px; }
+        .coord .coord-text-input { width:320px; }
+        .device-pill { display:flex; align-items:center; gap:6px; padding:4px 6px 4px 10px; border:1px solid #d5dee8; border-radius:999px; background:#fff; font-size:12px; color:#334155; }
+        .device-pill select { border:0; background:transparent; font-size:12px; padding:4px 2px; max-width:180px; color:#0f172a; }
+        .device-pill button { border:0; background:#e2e8f0; color:#0f172a; border-radius:999px; width:22px; height:22px; cursor:pointer; font-size:12px; padding:0; }
+        .device-pill button:hover { background:#cbd5e1; }
         .origin-pill {
             display:flex;
             align-items:center;
@@ -64,9 +68,7 @@
         <div class="top" id="topBar">
             <div class="title">iOS 即時定位</div>
             <div class="coord">
-                <input id="latInput" type="number" step="any" placeholder="緯度 Lat" />
-                <input id="lngInput" type="number" step="any" placeholder="經度 Lng" />
-                <input id="coordTextInput" class="coord-text-input" type="text" placeholder="可直接貼上 lat,lng 或多行座標" />
+                <input id="coordTextInput" class="coord-text-input" type="text" placeholder="貼上完整經緯度 例如: 25.033964,121.564468" />
                 <select id="moveMode">
                     <option value="instant" selected>直接跳轉</option>
                     <option value="walk">散步 (6km/h)</option>
@@ -101,6 +103,11 @@
                 <button id="exportGpxBtn" class="btn tool">匯出 GPX</button>
                 <input id="gpxFileInput" type="file" accept=".gpx,application/gpx+xml,text/xml,application/xml" style="display:none" />
             </div>
+            <div id="devicePill" class="device-pill">
+                <span>📱</span>
+                <select id="deviceSelect"><option value="">（未偵測到手機）</option></select>
+                <button id="renameDeviceBtn" title="重新命名">✏️</button>
+            </div>
             <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
             <button id="sessionToggleBtn" class="btn secondary">連線手機</button>
             <div id="originDisplay" class="origin-pill empty">尚未儲存原始位置</div>
@@ -118,9 +125,9 @@
         const sessionDot = document.getElementById('sessionDot');
         const sessionText = document.getElementById('sessionText');
         const sessionToggleBtn = document.getElementById('sessionToggleBtn');
-        const latInput = document.getElementById('latInput');
-        const lngInput = document.getElementById('lngInput');
         const coordTextInput = document.getElementById('coordTextInput');
+        const deviceSelect = document.getElementById('deviceSelect');
+        const renameDeviceBtn = document.getElementById('renameDeviceBtn');
         const moveModeEl = document.getElementById('moveMode');
         const topBar = document.getElementById('topBar');
         const toggleManageBtn = document.getElementById('toggleManageBtn');
@@ -376,7 +383,6 @@
         }
         const pressed = new Set();
         let moveTimer = null;
-        let smoothTarget = null;
         let targetMarker = null;
         let targetLine = null;
         let drawRouteMode = false;
@@ -427,7 +433,11 @@
         async function toggleSessionConnection() {
             sessionToggleBtn.disabled = true;
             try {
-                const res = await fetch('/api/session-toggle', { method: 'POST' });
+                const res = await fetch('/api/session-toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'toggle error');
                 setSessionState(Boolean(data.connected), Boolean(data.tunnel_alive));
@@ -724,8 +734,6 @@
         }
 
         function setInputs(lat, lng) {
-            latInput.value = Number(lat).toFixed(6);
-            lngInput.value = Number(lng).toFixed(6);
             coordTextInput.value = `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
         }
 
@@ -827,17 +835,21 @@
             }
         }
 
-        function clearRoute() {
+        async function clearRoute() {
             routePoints = [];
             routePlaybackActive = false;
             routePlaybackIndex = 0;
-            smoothTarget = null;
             pendingLocation = null;
             if (routeLine) {
                 map.removeLayer(routeLine);
                 routeLine = null;
             }
             updatePlaybackButtons();
+            try {
+                await fetch('/api/stop-movement', { method: 'POST' });
+            } catch (err) {
+                console.warn('stop-movement failed', err);
+            }
         }
 
         function addRoutePoint(lat, lng) {
@@ -846,18 +858,20 @@
             setStatus(`路徑點已加入（${routePoints.length} 點）`);
         }
 
-        function stopRoutePlayback(showStatus = true) {
+        async function stopRoutePlayback(showStatus = true) {
             routePlaybackActive = false;
-            routePlaybackIndex = 0;
-            smoothTarget = null;
-            pendingLocation = null;
             updatePlaybackButtons();
+            try {
+                await fetch('/api/stop-movement', { method: 'POST' });
+            } catch (err) {
+                console.warn('stop-movement failed', err);
+            }
             if (showStatus) {
-                setStatus(`已停止路徑播放（速度上限 ${currentSpeedKmh} km/h）`);
+                setStatus('已停止路徑播放');
             }
         }
 
-        function startRoutePlayback() {
+        async function startRoutePlayback() {
             if (routePoints.length < 2) {
                 setStatus('請先畫至少 2 個路徑點才能播放', true);
                 return;
@@ -865,13 +879,22 @@
 
             drawRouteMode = false;
             updateDrawRouteButton();
-            routePlaybackActive = true;
-            routePlaybackIndex = 0;
-            smoothTarget = routePoints[routePlaybackIndex];
-            updateSmoothVisuals(currentLatLng(), smoothTarget);
-            updatePlaybackButtons();
-            startMoveTimer();
-            setStatus(`開始沿路徑播放（速度上限 ${currentSpeedKmh} km/h）`);
+
+            const mode = moveModeEl.value === 'instant' ? 'walk' : moveModeEl.value;
+            try {
+                const res = await fetch('/api/play-route', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ points: routePoints, mode }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '啟動播放失敗');
+                routePlaybackActive = true;
+                updatePlaybackButtons();
+                setStatus(`後端沿路徑播放中（${routePoints.length} 點，模式 ${mode}）— 關掉網頁仍會繼續`);
+            } catch (err) {
+                setStatus(`啟動路徑播放失敗: ${err.message}`, true);
+            }
         }
 
         function buildGpx(points) {
@@ -1008,16 +1031,7 @@
             }
         }
 
-        function startSmoothMoveTo(lat, lng) {
-            smoothTarget = clampLatLng(lat, lng);
-            updateSmoothVisuals(currentLatLng(), smoothTarget);
-            startMoveTimer();
-        }
-
         async function moveByMode(lat, lng) {
-            routePlaybackActive = false;
-            updatePlaybackButtons();
-
             if (markFlowerMode) {
                 addFlowerAt(lat, lng);
                 markFlowerMode = false;
@@ -1025,13 +1039,28 @@
                 return;
             }
 
-            if (moveModeEl.value === 'instant') {
-                smoothTarget = null;
+            const mode = moveModeEl.value;
+            const clamp = clampLatLng(lat, lng);
+
+            if (mode === 'instant') {
                 clearSmoothVisuals();
-                await sendLocation(lat, lng);
+                await sendLocation(clamp.lat, clamp.lng);
                 return;
             }
-            startSmoothMoveTo(lat, lng);
+
+            try {
+                const res = await fetch('/api/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lat: clamp.lat, lng: clamp.lng, mode }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '移動失敗');
+                updateSmoothVisuals(currentLatLng(), { lat: clamp.lat, lng: clamp.lng });
+                setStatus(`後端移動中 → ${clamp.lat.toFixed(6)}, ${clamp.lng.toFixed(6)}（${moveModeEl.options[moveModeEl.selectedIndex].text}）`);
+            } catch (err) {
+                setStatus(`啟動移動失敗: ${err.message}`, true);
+            }
         }
 
         function parseCoordinateText(raw) {
@@ -1056,18 +1085,15 @@
             return null;
         }
 
-        function tryFillInputsFromCoordText(showError = false) {
+        function validateCoordText(showError = false) {
             const parsed = parseCoordinateText(coordTextInput.value);
             if (!parsed) {
                 if (showError && coordTextInput.value.trim()) {
                     setStatus('座標格式錯誤，請使用 lat,lng', true);
                 }
-                return false;
+                return null;
             }
-
-            latInput.value = parsed.lat.toFixed(6);
-            lngInput.value = parsed.lng.toFixed(6);
-            return true;
+            return parsed;
         }
 
         map.on('click', (e) => {
@@ -1080,45 +1106,20 @@
         });
 
         document.getElementById('applyBtn').addEventListener('click', async () => {
-            let lat = Number(latInput.value);
-            let lng = Number(lngInput.value);
-
-            const parsed = parseCoordinateText(coordTextInput.value);
-            if (parsed) {
-                lat = parsed.lat;
-                lng = parsed.lng;
-                setInputs(lat, lng);
-            }
-
-            if (Number.isNaN(lat) || Number.isNaN(lng)) {
-                setStatus('請先輸入有效經緯度', true);
+            const parsed = validateCoordText(true);
+            if (!parsed) {
+                setStatus('請先輸入有效經緯度 (格式: lat,lng)', true);
                 return;
             }
-            if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-                setStatus('經緯度超出範圍', true);
-                return;
-            }
-            map.panTo([lat, lng]);
-            await moveByMode(lat, lng);
-        });
-
-        coordTextInput.addEventListener('paste', () => {
-            setTimeout(() => {
-                tryFillInputsFromCoordText(false);
-            }, 0);
-        });
-
-        coordTextInput.addEventListener('blur', () => {
-            tryFillInputsFromCoordText(false);
+            setInputs(parsed.lat, parsed.lng);
+            map.panTo([parsed.lat, parsed.lng]);
+            await moveByMode(parsed.lat, parsed.lng);
         });
 
         coordTextInput.addEventListener('keydown', (evt) => {
             if (evt.key === 'Enter') {
                 evt.preventDefault();
-                const ok = tryFillInputsFromCoordText(true);
-                if (ok) {
-                    document.getElementById('applyBtn').click();
-                }
+                document.getElementById('applyBtn').click();
             }
         });
 
@@ -1143,7 +1144,6 @@
             try {
                 routePlaybackActive = false;
                 updatePlaybackButtons();
-                smoothTarget = null;
                 pendingLocation = null;
                 clearSmoothVisuals();
                 pressed.clear();
@@ -1253,13 +1253,13 @@
             setStatus('路徑已清空');
         });
 
-        playRouteBtn.addEventListener('click', () => {
+        playRouteBtn.addEventListener('click', async () => {
             if (routePlaybackActive) {
-                stopRoutePlayback();
+                await stopRoutePlayback();
                 clearSmoothVisuals();
                 return;
             }
-            startRoutePlayback();
+            await startRoutePlayback();
         });
 
         toggleManageBtn.addEventListener('click', () => {
@@ -1352,19 +1352,13 @@
                 const p = marker.getLatLng();
                 return { lat: p.lat, lng: p.lng };
             }
-            const lat = Number(latInput.value);
-            const lng = Number(lngInput.value);
-            if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
-                return { lat, lng };
-            }
+            const parsed = parseCoordinateText(coordTextInput.value);
+            if (parsed) return parsed;
             return { lat: 25.033964, lng: 121.564468 };
         }
 
         async function tickMove() {
             const now = currentLatLng();
-            let nextLat = now.lat;
-            let nextLng = now.lng;
-            let moved = false;
             const step = getStepMeters();
             const latStep = metersToLatDelta(step);
             const lngStep = metersToLngDelta(step, now.lat);
@@ -1372,64 +1366,18 @@
             const y = (pressed.has('w') ? 1 : 0) - (pressed.has('s') ? 1 : 0);
             const x = (pressed.has('d') ? 1 : 0) - (pressed.has('a') ? 1 : 0);
             const mag = Math.hypot(x, y);
-            if (mag > 0) {
-                const nx = x / mag;
-                const ny = y / mag;
-                nextLat += ny * latStep;
-                nextLng += nx * lngStep;
-                moved = true;
-                smoothTarget = null;
-            } else if (smoothTarget) {
-                const dyMeters = (smoothTarget.lat - now.lat) * 111320;
-                const dxMeters = (smoothTarget.lng - now.lng) * 111320 * Math.cos((now.lat * Math.PI) / 180);
-                const dist = Math.hypot(dxMeters, dyMeters);
-
-                if (dist <= step) {
-                    nextLat = smoothTarget.lat;
-                    nextLng = smoothTarget.lng;
-                    if (routePlaybackActive) {
-                        routePlaybackIndex += 1;
-                        if (routePlaybackIndex < routePoints.length) {
-                            smoothTarget = routePoints[routePlaybackIndex];
-                        } else {
-                            routePlaybackActive = false;
-                            routePlaybackIndex = 0;
-                            smoothTarget = null;
-                            updatePlaybackButtons();
-                            setStatus(`路徑播放完成（速度上限 ${currentSpeedKmh} km/h）`);
-                        }
-                    } else {
-                        smoothTarget = null;
-                    }
-                    moved = true;
-                } else {
-                    const nx = dxMeters / dist;
-                    const ny = dyMeters / dist;
-                    nextLat += metersToLatDelta(ny * step);
-                    nextLng += metersToLngDelta(nx * step, now.lat);
-                    moved = true;
-                }
-            }
-
-            if (!moved) {
+            if (mag === 0) {
                 stopMoveTimerIfIdle();
                 return;
             }
 
+            const nx = x / mag;
+            const ny = y / mag;
+            const nextLat = now.lat + ny * latStep;
+            const nextLng = now.lng + nx * lngStep;
             const clamped = clampLatLng(nextLat, nextLng);
-            if (smoothTarget) {
-                updateSmoothVisuals(clamped, smoothTarget);
-            }
             applyLocalPosition(clamped.lat, clamped.lng);
             await sendLocation(clamped.lat, clamped.lng, { silent: true });
-
-            if (pressed.size === 0 && !smoothTarget) {
-                if (targetLine) {
-                    map.removeLayer(targetLine);
-                    targetLine = null;
-                }
-                stopMoveTimerIfIdle();
-            }
         }
 
         function shouldIgnoreKeyEvent(evt) {
@@ -1445,7 +1393,7 @@
         }
 
         function stopMoveTimerIfIdle() {
-            if (pressed.size === 0 && !smoothTarget && moveTimer) {
+            if (pressed.size === 0 && moveTimer) {
                 clearInterval(moveTimer);
                 moveTimer = null;
             }
@@ -1456,8 +1404,13 @@
             const key = evt.key.toLowerCase();
             if (!['w', 'a', 's', 'd'].includes(key)) return;
             evt.preventDefault();
-            routePlaybackActive = false;
-            updatePlaybackButtons();
+            if (!pressed.has(key)) {
+                fetch('/api/stop-movement', { method: 'POST' }).catch(() => {});
+                if (routePlaybackActive) {
+                    routePlaybackActive = false;
+                    updatePlaybackButtons();
+                }
+            }
             pressed.add(key);
             startMoveTimer();
         });
@@ -1476,11 +1429,8 @@
 
         moveModeEl.addEventListener('change', () => {
             const val = moveModeEl.value;
-            routePlaybackActive = false;
-            updatePlaybackButtons();
 
             if (val === 'instant') {
-                smoothTarget = null;
                 clearSmoothVisuals();
                 currentSpeedKmh = 1000;
                 setStatus(`模式: 直接跳轉`);
@@ -1528,7 +1478,6 @@
                 busy = true;
                 routePlaybackActive = false;
                 updatePlaybackButtons();
-                smoothTarget = null;
                 clearSmoothVisuals();
                 setStatus('正在恢復真實位置...');
                 try {
@@ -1549,6 +1498,126 @@
 
         refreshSessionStatus();
         setInterval(refreshSessionStatus, 2000);
+
+        let knownDevices = [];
+        let activeUdid = null;
+
+        function displayNameFor(dev) {
+            if (dev.name) return dev.name;
+            const tail = (dev.udid || '').slice(-6);
+            return `iPhone (${tail})`;
+        }
+
+        async function refreshDevices() {
+            try {
+                const res = await fetch('/api/devices');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'devices error');
+                knownDevices = data.devices || [];
+            } catch (err) {
+                knownDevices = [];
+            }
+
+            const prev = deviceSelect.value;
+            deviceSelect.innerHTML = '';
+            if (!knownDevices.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '（未偵測到手機）';
+                deviceSelect.appendChild(opt);
+                activeUdid = null;
+                return;
+            }
+            const active = knownDevices.find(d => d.is_active) || knownDevices[0];
+            activeUdid = active ? active.udid : null;
+            knownDevices.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.udid;
+                opt.textContent = displayNameFor(d);
+                deviceSelect.appendChild(opt);
+            });
+            if (prev && knownDevices.some(d => d.udid === prev)) {
+                deviceSelect.value = prev;
+            } else if (activeUdid) {
+                deviceSelect.value = activeUdid;
+            }
+        }
+
+        deviceSelect.addEventListener('change', async () => {
+            const udid = deviceSelect.value;
+            if (!udid || udid === activeUdid) return;
+            try {
+                const res = await fetch('/api/devices/active', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ udid }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '切換失敗');
+                activeUdid = udid;
+                setStatus(`已切換到裝置 ${displayNameFor(knownDevices.find(d => d.udid === udid) || { udid })}，請按「連線手機」`);
+                await refreshSessionStatus();
+            } catch (err) {
+                setStatus(`切換裝置失敗: ${err.message}`, true);
+            }
+        });
+
+        renameDeviceBtn.addEventListener('click', async () => {
+            const udid = deviceSelect.value;
+            if (!udid) {
+                setStatus('請先接上手機', true);
+                return;
+            }
+            const current = knownDevices.find(d => d.udid === udid);
+            const suggested = current && current.name ? current.name : '';
+            const name = window.prompt('請輸入這台手機的名字', suggested);
+            if (name === null) return;
+            try {
+                const res = await fetch('/api/devices/name', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ udid, name: name.trim() }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '命名失敗');
+                setStatus(`已命名為「${name.trim() || '(無)'}」`);
+                await refreshDevices();
+            } catch (err) {
+                setStatus(`命名失敗: ${err.message}`, true);
+            }
+        });
+
+        async function pollMovementStatus() {
+            try {
+                const res = await fetch('/api/movement-status');
+                const data = await res.json();
+                if (!res.ok) return;
+                if (data.current) {
+                    applyLocalPosition(data.current.lat, data.current.lng);
+                }
+                if (data.mode === 'idle' && routePlaybackActive) {
+                    routePlaybackActive = false;
+                    updatePlaybackButtons();
+                    clearSmoothVisuals();
+                    setStatus('路徑播放已完成');
+                }
+                if (data.target && (data.mode === 'moving' || data.mode === 'playing_route')) {
+                    updateSmoothVisuals(data.current || currentLatLng(), data.target);
+                } else if (data.mode === 'idle') {
+                    clearSmoothVisuals();
+                }
+                if (data.last_error) {
+                    setStatus(`後端移動錯誤: ${data.last_error}`, true);
+                }
+            } catch (err) {
+                // silent
+            }
+        }
+
+        refreshDevices();
+        setInterval(refreshDevices, 5000);
+        pollMovementStatus();
+        setInterval(pollMovementStatus, 500);
     </script>
 </body>
 </html>
