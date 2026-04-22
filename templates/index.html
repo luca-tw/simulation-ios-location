@@ -325,6 +325,7 @@
         let knownDevices = [];
         let activeUdid = null;
         let openPopover = null; // 'fav' | 'routes'
+        let followMode = true;
         let appSettings = {
             map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
             last_position: null,
@@ -696,7 +697,7 @@
             if (!marker) marker = L.marker([lat, lng]).addTo(map);
             marker.setLatLng([lat, lng]);
             setInputs(lat, lng);
-            map.panTo([lat, lng], { animate: false });
+            if (followMode) map.panTo([lat, lng], { animate: false });
             scheduleTimezoneRefresh(lat, lng);
         }
 
@@ -919,6 +920,7 @@
         const EASY_ITEMS = [
             { key: 'save-origin', icon: '📍', title: '儲存原始位置' },
             { key: 'go-origin',   icon: '🏠', title: '回到原始位置' },
+            { key: 'follow',      icon: '🎯', title: '跟隨目前位置' },
             { key: 'fav',         icon: '⭐', title: '收藏' },
             { key: 'routes',      icon: '🛣️', title: '路徑庫' },
             { key: 'draw',        icon: '✎',  title: '畫路徑' },
@@ -938,7 +940,8 @@
                     (it.key === 'draw' && drawRouteMode) ||
                     (it.key === 'play' && routePlaybackActive) ||
                     (it.key === 'fav' && openPopover === 'fav') ||
-                    (it.key === 'routes' && openPopover === 'routes');
+                    (it.key === 'routes' && openPopover === 'routes') ||
+                    (it.key === 'follow' && followMode);
                 if (isActive) b.classList.add('active');
                 b.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -979,6 +982,16 @@
                 } catch (err) {
                     pushToast(`回到原始位置失敗: ${err.message}`, 'error');
                     await refreshSessionStatus();
+                }
+            } else if (key === 'follow') {
+                followMode = !followMode;
+                renderEasyBar();
+                if (followMode) {
+                    const p = currentLatLng();
+                    map.panTo([p.lat, p.lng]);
+                    pushToast('已開啟跟隨目前位置', 'info');
+                } else {
+                    pushToast('已關閉跟隨目前位置', 'info');
                 }
             } else if (key === 'fav') {
                 togglePopover('fav');
