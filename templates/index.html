@@ -5,368 +5,303 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>iOS 即時定位地圖</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-easybutton@2.4.0/src/easy-button.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        :root { --bg:#f5f7fb; --card:#ffffff; --ink:#102136; --muted:#5b6b7c; --brand:#0f766e; --warn:#b45309; }
-        html, body { height: 100%; margin: 0; background: radial-gradient(circle at 20% 20%, #eef6ff, #f7fafc 60%, #eef2ff 100%); color: var(--ink); font-family: "Avenir Next", "PingFang TC", "Noto Sans TC", sans-serif; }
-        .wrap { display:flex; flex-direction:column; height:100%; }
-        .top { padding:12px 14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:rgba(255,255,255,.78); backdrop-filter: blur(6px); border-bottom:1px solid #d7e3ee; }
-        .title { font-size:16px; font-weight:700; letter-spacing:.4px; }
-        .status { font-size:13px; color:var(--muted); flex:1; }
-        .session-pill { display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #d5dee8; border-radius:999px; background:#fff; font-size:12px; color:#334155; }
-        .session-dot { width:8px; height:8px; border-radius:50%; background:#94a3b8; }
-        .session-dot.ok { background:#16a34a; }
-        .session-dot.off { background:#ef4444; }
-        .btn { border:0; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:600; }
-        .btn.secondary { background:#334155; }
-        .coord { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-        .coord input { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; }
-        .coord select { border:1px solid #c7d7e8; border-radius:8px; padding:8px; font-size:13px; background:#fff; }
-        .coord .fav-select { width:180px; }
-        .coord .route-select { width:190px; }
-        .coord .coord-text-input { width:320px; }
-        .device-pill { display:flex; align-items:center; gap:6px; padding:4px 6px 4px 10px; border:1px solid #d5dee8; border-radius:999px; background:#fff; font-size:12px; color:#334155; }
-        .device-pill select { border:0; background:transparent; font-size:12px; padding:4px 2px; max-width:180px; color:#0f172a; }
-        .device-pill button { border:0; background:#e2e8f0; color:#0f172a; border-radius:999px; width:22px; height:22px; cursor:pointer; font-size:12px; padding:0; }
-        .device-pill button:hover { background:#cbd5e1; }
-        .origin-pill {
-            display:flex;
-            align-items:center;
-            gap:6px;
-            padding:6px 10px;
-            border:1px solid #d5dee8;
-            border-radius:999px;
-            background:#fff;
-            font-size:12px;
-            color:#334155;
-            min-height: 18px;
+        :root {
+            --brand-600: #0f766e;
+            --brand-500: #14b8a6;
+            --brand-100: #ccfbf1;
+            --accent-600: #b45309;
+            --accent-500: #d97706;
+            --route-600: #2563eb;
+            --ink: #102136;
+            --ink-2: #1e293b;
+            --muted: #5b6b7c;
+            --muted-2: #94a3b8;
+            --card: #ffffff;
+            --bg: #f5f7fb;
+            --surface: rgba(255,255,255,.78);
+            --line: #d5dee8;
+            --line-soft: #e2e8f0;
+            --line-input: #c7d7e8;
+            --ok: #16a34a;
+            --off: #ef4444;
+            --warn: #b45309;
+            --warn-bg: #fffaf3;
+            --warn-border: #f1c27d;
+            --error-bg: #fff1f2;
+            --error-border: #fca5a5;
+            --error-text: #b91c1c;
+            --slate-700: #334155;
+            --slate-800: #1f2937;
+            --toast-bg: rgba(16,33,54,.88);
+            --bg-gradient: radial-gradient(circle at 20% 20%, #eef6ff, #f7fafc 60%, #eef2ff 100%);
+            --font-sans: "Avenir Next", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, -apple-system, sans-serif;
+            --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+            --r-4: 4px;
+            --r-8: 8px;
+            --r-12: 12px;
+            --r-16: 16px;
+            --r-pill: 999px;
+            --shadow-sm: 0 1px 2px rgba(16,33,54,.06);
+            --shadow-md: 0 4px 12px rgba(16,33,54,.08);
+            --shadow-pop: 0 6px 20px rgba(16,33,54,.14);
+            --shadow-toast: 0 10px 24px rgba(16,33,54,.22);
+            --focus-ring: 0 0 0 3px rgba(15,118,110,.28);
+            --ease-out: cubic-bezier(.2,.8,.2,1);
+            --dur-fast: 120ms;
+            --dur-base: 200ms;
         }
-        .origin-pill.empty {
-            color: var(--warn);
-            border-color: #f1c27d;
-            background: #fffaf3;
-            font-weight: 600;
+
+        html, body { height: 100%; margin: 0; background: var(--bg-gradient); color: var(--ink); font-family: var(--font-sans); font-size: 14px; -webkit-font-smoothing: antialiased; }
+        .wrap { display: flex; flex-direction: column; height: 100%; }
+
+        /* Top bar */
+        .top {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px;
+            background: var(--surface);
+            backdrop-filter: blur(6px);
+            border-bottom: 1px solid var(--line);
+            position: relative;
+            z-index: 20;
+            flex-wrap: nowrap;
         }
-        .manage-item { display:none; }
-        .top.manage-open .manage-item { display:inline-flex; }
-        .top.manage-open select.manage-item { display:inline-block; }
-        .tools { display:flex; gap:8px; align-items:center; }
-        .btn.tool { background:#1f2937; }
-        .btn.tool.active { background:#b45309; }
-        #drawRouteBtn, #clearRouteBtn, #playRouteBtn, #saveRouteBtn, #importGpxBtn, #exportGpxBtn { display:none; }
-        #map { flex:1; }
-        .easy-button-button { font-size:16px; line-height:26px; }
-        .easy-button-button.active { background:#b45309; color:#fff; }
-        .route-easybar-midleft {
-            margin-top: 50vh;
+        .title { font-size: 16px; font-weight: 700; letter-spacing: .4px; color: var(--ink); white-space: nowrap; }
+        .spacer { flex: 1; }
+
+        /* Input */
+        .input-wrap { position: relative; }
+        input.coord-input, select.mode-select {
+            border: 1px solid var(--line-input);
+            border-radius: var(--r-8);
+            padding: 8px 10px;
+            font-size: 13px;
+            font-family: var(--font-sans);
+            font-variant-numeric: tabular-nums;
+            background: #fff;
+            color: var(--ink);
+            outline: none;
         }
-        .hint { position:absolute; right:12px; bottom:12px; z-index:500; background:rgba(16,33,54,.88); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; }
+        input.coord-input { width: 340px; }
+        input.coord-input:focus, select.mode-select:focus { box-shadow: var(--focus-ring); border-color: var(--brand-600); }
+
+        /* Candidates dropdown */
+        .candidates {
+            position: absolute; top: calc(100% + 4px); left: 0; width: 420px;
+            background: #fff; border: 1px solid var(--line); border-radius: var(--r-12);
+            box-shadow: var(--shadow-pop); overflow: hidden; z-index: 30;
+        }
+        .candidate { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line-soft); }
+        .candidate:last-child { border-bottom: 0; }
+        .candidate:hover { background: #f1f5f9; }
+        .candidate .name { color: var(--ink); }
+        .candidate .coord { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+        /* Buttons */
+        .btn {
+            border: 0; border-radius: var(--r-8); padding: 8px 12px; font-size: 13px;
+            font-family: var(--font-sans); font-weight: 600; cursor: pointer; color: #fff;
+            line-height: 1.2; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;
+            background: var(--brand-600);
+            transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+        }
+        .btn:hover:not(:disabled) { background: var(--brand-500); }
+        .btn:disabled { background: var(--muted-2); cursor: not-allowed; }
+        .btn.secondary { background: var(--slate-700); }
+        .btn.secondary:hover:not(:disabled) { background: #475569; }
+        .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+        .btn.ghost:hover:not(:disabled) { background: #f1f5f9; }
+        .btn.danger { background: var(--off); }
+        .btn.danger:hover:not(:disabled) { background: #dc2626; }
+        .btn.sm { padding: 6px 10px; font-size: 12px; }
+
+        /* Pills */
+        .pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-pill);
+            font-size: 12px; line-height: 1.3; background: #fff; color: var(--slate-700);
+            transition: background var(--dur-fast) var(--ease-out);
+        }
+        .pill.clickable { cursor: pointer; }
+        .pill.clickable:hover { background: #f1f5f9; }
+        .pill.translucent { background: rgba(255,255,255,.9); backdrop-filter: blur(6px); }
+        .pill.warn { color: var(--warn); border-color: var(--warn-border); background: var(--warn-bg); font-weight: 600; }
+        .pill.error { color: var(--error-text); border-color: var(--error-border); background: var(--error-bg); }
+        .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--muted-2); display: inline-block; }
+        .dot.ok { background: var(--ok); }
+        .dot.off { background: var(--off); }
+        .pill .inner-select { border: 0; background: transparent; font-size: 12px; padding: 4px 2px; color: var(--ink-2); max-width: 180px; outline: none; }
+        .pill .icon-btn { border: 0; background: #e2e8f0; color: var(--ink); border-radius: 999px; width: 22px; height: 22px; cursor: pointer; font-size: 12px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+        .pill .icon-btn:hover { background: #cbd5e1; }
+
+        /* Map */
+        #map { flex: 1; position: relative; }
+        .leaflet-container { background: #e8eef5; font-family: var(--font-sans); }
+
+        /* EasyBar (custom vertical floater) */
+        .easybar {
+            position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+            z-index: 500;
+            display: flex; flex-direction: column; gap: 4px;
+            background: #fff; border: 1px solid var(--line); border-radius: 10px;
+            padding: 4px; box-shadow: var(--shadow-pop);
+        }
+        .easybar button {
+            width: 36px; height: 36px; border: 0; background: #fff; color: var(--ink);
+            border-radius: 6px; font-size: 16px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background var(--dur-fast) var(--ease-out);
+            padding: 0;
+        }
+        .easybar button:hover:not(.active) { background: #f1f5f9; }
+        .easybar button.active { background: var(--accent-600); color: #fff; }
+
+        /* Popover */
+        .popover {
+            position: absolute; left: 68px; top: 50%; transform: translateY(-50%);
+            z-index: 600; width: 280px;
+            background: #fff; border: 1px solid var(--line); border-radius: var(--r-12);
+            box-shadow: var(--shadow-pop); padding: 12px;
+            animation: popIn 200ms var(--ease-out);
+        }
+        .popover::before {
+            content: ''; position: absolute; left: -7px; top: 18px; width: 12px; height: 12px;
+            background: #fff; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line);
+            transform: rotate(45deg);
+        }
+        @keyframes popIn { from { opacity: 0; transform: translateY(-50%) translateX(-4px); } to { opacity: 1; transform: translateY(-50%) translateX(0); } }
+        .popover .pop-head { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+        .popover .pop-close { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0; }
+        .popover select {
+            width: 100%; border: 1px solid var(--line-input); border-radius: var(--r-8);
+            padding: 6px 8px; font-size: 12px; background: #fff; color: var(--ink); margin-bottom: 8px; outline: none;
+        }
+        .popover .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .popover .divider { border-top: 1px dashed var(--line-soft); margin-top: 8px; padding-top: 8px; }
+        .popover .count { font-size: 11px; color: var(--muted); align-self: center; text-align: right; }
+
+        /* Map overlay (bottom-left pills stack) */
+        .map-overlay { position: absolute; left: 14px; bottom: 14px; z-index: 500; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+
+        /* Toast stack (bottom-right) */
+        .toasts {
+            position: absolute; right: 14px; bottom: 14px; z-index: 700;
+            display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+            pointer-events: none; max-width: 420px;
+        }
+        .toast {
+            pointer-events: auto;
+            background: #fff; color: var(--ink); border: 1px solid var(--line);
+            border-left: 3px solid var(--brand-600);
+            border-radius: var(--r-12); padding: 10px 14px; min-width: 260px; max-width: 420px;
+            box-shadow: var(--shadow-pop); font-size: 13px;
+            display: flex; gap: 10px; align-items: center;
+            animation: toastIn 200ms var(--ease-out);
+        }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+        .toast.ok { border-left-color: var(--ok); }
+        .toast.error { border-left-color: var(--off); }
+        .toast .badge {
+            width: 22px; height: 22px; border-radius: 999px; flex: 0 0 22px;
+            display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+            background: var(--brand-100); color: var(--brand-600);
+        }
+        .toast.ok .badge { background: #dcfce7; color: var(--ok); }
+        .toast.error .badge { background: #fee2e2; color: var(--off); }
+        .toast .text { flex: 1; }
+        .toast .dismiss { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+
+        /* Bottom-right attribution hint (kept as tiny dark chip) */
+        .hint { position: absolute; right: 14px; top: 14px; z-index: 400; background: var(--toast-bg); color: #fff; padding: 6px 10px; border-radius: var(--r-8); font-size: 11px; }
+
+        /* Markers */
+        .coord-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
     </style>
 </head>
 <body>
     <div class="wrap">
-        <div class="top" id="topBar">
+        <div class="top">
             <div class="title">iOS 即時定位</div>
-            <div class="coord">
-                <input id="coordTextInput" class="coord-text-input" type="text" placeholder="貼上完整經緯度 例如: 25.033964,121.564468" />
-                <select id="moveMode">
-                    <option value="instant" selected>直接跳轉</option>
-                    <option value="walk">散步 (6km/h)</option>
-                    <option value="bike">腳踏車 (18km/h)</option>
-                    <option value="scooter">機車 (60km/h)</option>
-                    <option value="car">汽車 (120km/h)</option>
-                    <option value="hsr">高鐵 (230km/h)</option>
-                </select>
-                <button id="applyBtn" class="btn">套用座標</button>
-                <button id="saveOriginBtn" class="btn secondary">儲存原始位置</button>
-                <button id="goOriginBtn" class="btn secondary">回到原始位置及狀態</button>
-                <button id="toggleManageBtn" class="btn secondary">更多功能</button>
-                <select id="favoriteSelect" class="fav-select manage-item">
-                    <option value="">收藏地點</option>
-                </select>
-                <button id="saveFavoriteBtn" class="btn secondary manage-item">收藏目前點</button>
-                <button id="goFavoriteBtn" class="btn secondary manage-item">前往收藏</button>
-                <button id="deleteFavoriteBtn" class="btn secondary manage-item">刪除收藏</button>
-                <select id="routePresetSelect" class="route-select manage-item">
-                    <option value="">已存路徑</option>
-                </select>
-                <button id="saveRouteBtn" class="btn secondary manage-item">儲存路徑</button>
-                <button id="loadRouteBtn" class="btn secondary manage-item">載入路徑</button>
-                <button id="deleteRouteBtn" class="btn secondary manage-item">刪除路徑</button>
+            <div class="input-wrap">
+                <input id="coordTextInput" class="coord-input" type="text" placeholder="貼上經緯度 例如: 25.033964,121.564468，或輸入地址" autocomplete="off" />
+                <div id="candidates" class="candidates" style="display:none"></div>
             </div>
-            <div class="tools">
-                <button id="drawRouteBtn" class="btn tool">畫路徑</button>
-                <button id="markFlowerBtn" class="btn tool" style="background-color: #d97706;">種花</button>
-                <button id="clearRouteBtn" class="btn tool">清空路徑</button>
-                <button id="playRouteBtn" class="btn tool">播放路徑</button>
-                <button id="importGpxBtn" class="btn tool">匯入 GPX</button>
-                <button id="exportGpxBtn" class="btn tool">匯出 GPX</button>
-                <input id="gpxFileInput" type="file" accept=".gpx,application/gpx+xml,text/xml,application/xml" style="display:none" />
-            </div>
-            <div id="devicePill" class="device-pill">
+            <select id="moveMode" class="mode-select">
+                <option value="instant" selected>直接跳轉</option>
+                <option value="walk">散步 (6km/h)</option>
+                <option value="bike">腳踏車 (18km/h)</option>
+                <option value="scooter">機車 (60km/h)</option>
+                <option value="car">汽車 (120km/h)</option>
+                <option value="hsr">高鐵 (230km/h)</option>
+            </select>
+            <button id="goBtn" class="btn" title="Enter">前往</button>
+            <button id="searchBtn" class="btn" title="地址搜尋">🔍 搜索</button>
+            <div class="spacer"></div>
+            <span class="pill">
                 <span>📱</span>
-                <select id="deviceSelect"><option value="">（未偵測到手機）</option></select>
-                <button id="renameDeviceBtn" title="重新命名">✏️</button>
-            </div>
-            <div id="sessionPill" class="session-pill"><span id="sessionDot" class="session-dot"></span><span id="sessionText">會話狀態：檢查中</span></div>
-            <button id="sessionToggleBtn" class="btn secondary">連線手機</button>
-            <div id="originDisplay" class="origin-pill empty">尚未儲存原始位置</div>
-            <div id="localTimeDisplay" class="origin-pill">當地時間：--</div>
-            <div id="status" class="status">點地圖或輸入經緯度即可更新手機定位</div>
+                <select id="deviceSelect" class="inner-select"><option value="">（未偵測到手機）</option></select>
+                <button id="renameDeviceBtn" class="icon-btn" title="重新命名">✏️</button>
+            </span>
+            <span id="sessionPill" class="pill clickable" title="點擊連線或中斷">
+                <span id="sessionDot" class="dot"></span>
+                <span id="sessionText">會話狀態：檢查中</span>
+            </span>
         </div>
-        <div id="map"></div>
+        <div id="map">
+            <div id="easybar" class="easybar"></div>
+            <div id="popoverHost"></div>
+            <div id="mapOverlay" class="map-overlay">
+                <span id="originDisplay" class="pill warn">
+                    <span>📍</span><span id="originText">尚未儲存原始位置</span>
+                </span>
+                <span id="localTimeDisplay" class="pill translucent">
+                    <span>🕐</span><span id="localTimeText">當地時間：--</span>
+                </span>
+            </div>
+            <input id="gpxFileInput" type="file" accept=".gpx,application/gpx+xml,text/xml,application/xml" style="display:none" />
+            <div id="toasts" class="toasts"></div>
+        </div>
     </div>
-    <div class="hint">資料來源: OpenStreetMap</div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="https://unpkg.com/leaflet-easybutton@2.4.0/src/easy-button.js"></script>
     <script>
-        const statusEl = document.getElementById('status');
+        // ---------- DOM ----------
+        const coordTextInput = document.getElementById('coordTextInput');
+        const moveModeEl = document.getElementById('moveMode');
+        const goBtn = document.getElementById('goBtn');
+        const searchBtn = document.getElementById('searchBtn');
+        const candidatesEl = document.getElementById('candidates');
+        const sessionPill = document.getElementById('sessionPill');
         const sessionDot = document.getElementById('sessionDot');
         const sessionText = document.getElementById('sessionText');
-        const sessionToggleBtn = document.getElementById('sessionToggleBtn');
-        const coordTextInput = document.getElementById('coordTextInput');
         const deviceSelect = document.getElementById('deviceSelect');
         const renameDeviceBtn = document.getElementById('renameDeviceBtn');
-        const moveModeEl = document.getElementById('moveMode');
-        const topBar = document.getElementById('topBar');
-        const toggleManageBtn = document.getElementById('toggleManageBtn');
-        const drawRouteBtn = document.getElementById('drawRouteBtn');
-        const markFlowerBtn = document.getElementById('markFlowerBtn');
-        const clearRouteBtn = document.getElementById('clearRouteBtn');
-        const playRouteBtn = document.getElementById('playRouteBtn');
-        const favoriteSelect = document.getElementById('favoriteSelect');
-        const saveFavoriteBtn = document.getElementById('saveFavoriteBtn');
-        const goFavoriteBtn = document.getElementById('goFavoriteBtn');
-        const deleteFavoriteBtn = document.getElementById('deleteFavoriteBtn');
-        const routePresetSelect = document.getElementById('routePresetSelect');
-        const saveRouteBtn = document.getElementById('saveRouteBtn');
-        const loadRouteBtn = document.getElementById('loadRouteBtn');
-        const deleteRouteBtn = document.getElementById('deleteRouteBtn');
-        const importGpxBtn = document.getElementById('importGpxBtn');
-        const exportGpxBtn = document.getElementById('exportGpxBtn');
-        const gpxFileInput = document.getElementById('gpxFileInput');
-        const saveOriginBtn = document.getElementById('saveOriginBtn');
-        const goOriginBtn = document.getElementById('goOriginBtn');
+        const easybarEl = document.getElementById('easybar');
+        const popoverHost = document.getElementById('popoverHost');
         const originDisplay = document.getElementById('originDisplay');
+        const originText = document.getElementById('originText');
         const localTimeDisplay = document.getElementById('localTimeDisplay');
+        const localTimeText = document.getElementById('localTimeText');
+        const toastsEl = document.getElementById('toasts');
+        const gpxFileInput = document.getElementById('gpxFileInput');
 
+        // ---------- Map ----------
         const map = L.map('map', { zoomControl: true }).setView([25.033964, 121.564468], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
-        let easyDrawRouteBtn = null;
-        let easyPlayRouteBtn = null;
+        // Prevent UI overlays from forwarding clicks to the map beneath.
+        L.DomEvent.disableClickPropagation(popoverHost);
+        L.DomEvent.disableScrollPropagation(popoverHost);
+        L.DomEvent.disableClickPropagation(easybarEl);
+        L.DomEvent.disableScrollPropagation(easybarEl);
 
-        // Flower Logic
-        const flowerAssetUrls = {
-            blue: '/assets/blue-flower.png',
-            red: '/assets/red-flower.png',
-            white: '/assets/white-flower.png',
-            yellow: '/assets/yellow-flower.png'
-        };
-        const flowerColors = Object.keys(flowerAssetUrls);
-        const flowerMarkers = [];
-
-        function getFlowerIcon(color) {
-            const url = flowerAssetUrls[color] || flowerAssetUrls.red;
-            return L.icon({
-                iconUrl: url,
-                iconSize: [40, 40],
-                iconAnchor: [20, 40],
-                popupAnchor: [0, -40]
-            });
-        }
-
-        function renderFlowerSpots() {
-            flowerMarkers.forEach(m => map.removeLayer(m));
-            flowerMarkers.length = 0;
-
-            const spots = appSettings.flower_spots || [];
-            spots.forEach((spot, idx) => {
-                const icon = getFlowerIcon(spot.color);
-                const m = L.marker([spot.lat, spot.lng], { icon: icon }).addTo(map);
-
-                const deleteBtn = `<br/><button onclick="deleteFlower(${idx})" style="color:white;background:#ef4444;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;margin-top:4px;">刪除</button>`;
-                m.bindPopup(`<b>${spot.name}</b>${deleteBtn}`);
-                flowerMarkers.push(m);
-            });
-            renderFavorites();
-        }
-
-        window.deleteFlower = function(idx) {
-            if (confirm('確定要刪除這朵花？')) {
-                appSettings.flower_spots.splice(idx, 1);
-                renderFlowerSpots();
-                saveSettingsPartial({ flower_spots: appSettings.flower_spots });
-            }
-        };
-
-        function addFlowerAt(lat, lng) {
-            const color = flowerColors[Math.floor(Math.random() * flowerColors.length)];
-            const suggested = `小花-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
-            const name = window.prompt('請輸入花朵名稱', suggested);
-            if (name === null) return;
-
-            const clamp = clampLatLng(lat, lng);
-            const spot = { name: (name || '').trim() || '未命名花朵', lat: clamp.lat, lng: clamp.lng, color };
-            if (!appSettings.flower_spots) appSettings.flower_spots = [];
-            appSettings.flower_spots.push(spot);
-            renderFlowerSpots();
-            saveSettingsPartial({ flower_spots: appSettings.flower_spots });
-            setStatus(`已種下一朵 ${color} 色的小花 (${spot.name})`);
-        }
-
-        function updateMarkFlowerButton() {
-            markFlowerBtn.classList.toggle('active', markFlowerMode);
-            markFlowerBtn.textContent = markFlowerMode ? '取消種花' : '種花模式';
-        }
-
-        function renderOriginDisplay() {
-            const p = appSettings.origin_position;
-            if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
-                originDisplay.classList.remove('empty');
-                originDisplay.textContent = `已儲存原始位置: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
-            } else {
-                originDisplay.classList.add('empty');
-                originDisplay.textContent = '尚未儲存原始位置';
-            }
-        }
-
-        function renderLocalTime() {
-            if (!localTimeDisplay) return;
-
-            if (!localTimezone) {
-                localTimeDisplay.textContent = '當地時間：--';
-                localTimeDisplay.style.color = '#334155';
-                localTimeDisplay.style.borderColor = '#d5dee8';
-                localTimeDisplay.style.background = '#fff';
-                return;
-            }
-
-            try {
-                const now = new Date();
-
-                let isDifferentDay = false;
-
-                if (baseTimezone && localTimezone) {
-                    const baseDate = new Intl.DateTimeFormat('en-CA', {
-                        timeZone: baseTimezone,
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                    }).format(now);
-
-                    const localDate = new Intl.DateTimeFormat('en-CA', {
-                        timeZone: localTimezone,
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                    }).format(now);
-
-                    isDifferentDay = baseDate !== localDate;
-                }
-
-                const formatted = new Intl.DateTimeFormat('zh-TW', {
-                    timeZone: localTimezone,
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                }).format(now);
-
-                localTimeDisplay.textContent = isDifferentDay
-                    ? `當地時間：${formatted}（日期不同，請留意首頁步數）`
-                    : `當地時間：${formatted}`;
-
-                if (isDifferentDay) {
-                    localTimeDisplay.style.color = '#b91c1c';
-                    localTimeDisplay.style.borderColor = '#fca5a5';
-                    localTimeDisplay.style.background = '#fff1f2';
-                } else {
-                    localTimeDisplay.style.color = '#334155';
-                    localTimeDisplay.style.borderColor = '#d5dee8';
-                    localTimeDisplay.style.background = '#fff';
-                }
-            } catch (err) {
-                console.warn('renderLocalTime failed', err);
-                localTimeDisplay.textContent = '當地時間：取得失敗';
-                localTimeDisplay.style.color = '#334155';
-                localTimeDisplay.style.borderColor = '#d5dee8';
-                localTimeDisplay.style.background = '#fff';
-            }
-        }
-
-        function startLocalClock() {
-            if (localClockTimer) {
-                clearInterval(localClockTimer);
-            }
-            renderLocalTime();
-            localClockTimer = setInterval(renderLocalTime, 1000);
-        }
-
-        function shouldRefreshTimezone(lat, lng) {
-            if (lastTimezoneLookup.lat === null || lastTimezoneLookup.lng === null) {
-                return true;
-            }
-
-            const latDiff = Math.abs(lat - lastTimezoneLookup.lat);
-            const lngDiff = Math.abs(lng - lastTimezoneLookup.lng);
-
-            return latDiff > 0.2 || lngDiff > 0.2;
-        }
-
-        async function updateLocalTimezoneByLatLng(lat, lng, options = {}) {
-            const { setAsBase = false } = options;
-
-            try {
-                const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&current=temperature_2m&timezone=auto`;
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (!res.ok) {
-                    throw new Error(data.reason || data.error || 'timezone lookup failed');
-                }
-
-                if (!data.timezone) {
-                    throw new Error('找不到時區');
-                }
-
-                localTimezone = data.timezone;
-                lastTimezoneLookup = { lat, lng };
-
-                if (setAsBase || !baseTimezone) {
-                    baseTimezone = data.timezone;
-                }
-
-                startLocalClock();
-            } catch (err) {
-                console.warn('updateLocalTimezoneByLatLng failed', err);
-                localTimezone = null;
-                renderLocalTime();
-            }
-        }
-
-        function scheduleTimezoneRefresh(lat, lng, options = {}) {
-            const { force = false, setAsBase = false } = options;
-
-            if (!force && !shouldRefreshTimezone(lat, lng)) return;
-
-            if (timezoneLookupTimer) {
-                clearTimeout(timezoneLookupTimer);
-            }
-
-            timezoneLookupTimer = setTimeout(() => {
-                timezoneLookupTimer = null;
-                updateLocalTimezoneByLatLng(lat, lng, { setAsBase });
-            }, 250);
-        }
-
+        // ---------- State ----------
         let marker = null;
         let initialMarker = null;
         let busy = false;
@@ -376,46 +311,102 @@
         let timezoneLookupTimer = null;
         let lastTimezoneLookup = { lat: null, lng: null };
         let pendingLocation = null;
-        let currentSpeedKmh = 18;
+        let currentSpeedKmh = 1000;
         const KEY_TICK_MS = 200;
-        function getStepMeters() {
-            return (currentSpeedKmh / 3.6) * (KEY_TICK_MS / 1000);
-        }
         const pressed = new Set();
         let moveTimer = null;
         let targetMarker = null;
         let targetLine = null;
         let drawRouteMode = false;
-        let markFlowerMode = false;
         let routePoints = [];
         let routeLine = null;
         let routePlaybackActive = false;
         let routePlaybackIndex = 0;
+        let knownDevices = [];
+        let activeUdid = null;
+        let openPopover = null; // 'fav' | 'routes'
         let appSettings = {
             map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
             last_position: null,
             origin_position: null,
             favorites: [],
-            flower_spots: [],
             saved_routes: [],
         };
         let settingsSaveTimer = null;
 
-        function setStatus(text, warn = false) {
-            statusEl.textContent = text;
-            statusEl.style.color = warn ? '#b45309' : '#5b6b7c';
+        // ---------- Toast ----------
+        let toastId = 1;
+        function pushToast(text, kind = 'info', ms) {
+            const id = toastId++;
+            const ttl = ms != null ? ms : (kind === 'error' ? 7000 : 5000);
+            const el = document.createElement('div');
+            el.className = `toast ${kind === 'ok' ? 'ok' : kind === 'error' ? 'error' : ''}`;
+            el.dataset.id = String(id);
+            const badge = kind === 'error' ? '!' : kind === 'ok' ? '✓' : '→';
+            el.innerHTML = `<span class="badge"></span><span class="text"></span><button class="dismiss" aria-label="關閉">×</button>`;
+            el.querySelector('.badge').textContent = badge;
+            el.querySelector('.text').textContent = text;
+            el.querySelector('.dismiss').addEventListener('click', () => el.remove());
+            toastsEl.appendChild(el);
+            setTimeout(() => el.remove(), ttl);
+            return id;
         }
 
+        // ---------- Utils ----------
+        function clampLatLng(lat, lng) {
+            const clampedLat = Math.max(-90, Math.min(90, lat));
+            let wrappedLng = lng;
+            if (wrappedLng > 180) wrappedLng -= 360;
+            if (wrappedLng < -180) wrappedLng += 360;
+            return { lat: clampedLat, lng: wrappedLng };
+        }
+
+        function setInputs(lat, lng) {
+            coordTextInput.value = `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
+        }
+
+        function parseCoordinateText(raw) {
+            const text = String(raw || '').trim();
+            if (!text) return null;
+            const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+            for (const line of lines.length ? lines : [text]) {
+                const m = line.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+                if (!m) continue;
+                const lat = Number(m[1]);
+                const lng = Number(m[2]);
+                if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
+                if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+                return { lat, lng };
+            }
+            return null;
+        }
+
+        function currentLatLng() {
+            if (marker) {
+                const p = marker.getLatLng();
+                return { lat: p.lat, lng: p.lng };
+            }
+            const parsed = parseCoordinateText(coordTextInput.value);
+            if (parsed) return parsed;
+            return { lat: 25.033964, lng: 121.564468 };
+        }
+
+        function metersToLatDelta(m) { return m / 111320; }
+        function metersToLngDelta(m, lat) {
+            const cos = Math.cos((lat * Math.PI) / 180);
+            return m / Math.max(1e-6, 111320 * Math.abs(cos));
+        }
+        function getStepMeters() { return (currentSpeedKmh / 3.6) * (KEY_TICK_MS / 1000); }
+
+        // ---------- Session pill ----------
         function setSessionState(connected, tunnelAlive) {
             sessionDot.classList.remove('ok', 'off');
             if (connected) {
                 sessionDot.classList.add('ok');
-                sessionText.textContent = tunnelAlive ? '會話已連線（Tunnel 活躍）' : '會話已連線';
-                sessionToggleBtn.textContent = '中斷連線';
+                sessionText.textContent = tunnelAlive ? '會話已連線（Tunnel 活躍）· 中斷' : '會話已連線 · 中斷';
             } else {
                 sessionDot.classList.add('off');
-                sessionText.textContent = '會話已斷線';
-                sessionToggleBtn.textContent = '連線手機';
+                sessionText.textContent = '會話已斷線 · 點擊連線';
             }
         }
 
@@ -431,7 +422,7 @@
         }
 
         async function toggleSessionConnection() {
-            sessionToggleBtn.disabled = true;
+            sessionPill.style.pointerEvents = 'none';
             try {
                 const res = await fetch('/api/session-toggle', {
                     method: 'POST',
@@ -441,61 +432,99 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'toggle error');
                 setSessionState(Boolean(data.connected), Boolean(data.tunnel_alive));
-                if (data.connected) {
-                    setStatus('已連線到手機，可以開始模擬定位');
-                } else {
-                    setStatus('已中斷手機連線');
-                }
+                pushToast(data.connected ? '已連線到手機，可以開始模擬定位' : '已中斷手機連線', 'ok');
             } catch (err) {
-                setStatus(`切換連線失敗: ${err.message}`, true);
+                pushToast(`切換連線失敗: ${err.message}`, 'error');
                 await refreshSessionStatus();
             } finally {
-                sessionToggleBtn.disabled = false;
+                sessionPill.style.pointerEvents = '';
             }
         }
 
+        sessionPill.addEventListener('click', toggleSessionConnection);
+
+        // ---------- Timezone clock ----------
+        function renderLocalTime() {
+            if (!localTimezone) {
+                localTimeText.textContent = '當地時間：--';
+                localTimeDisplay.classList.remove('error');
+                localTimeDisplay.classList.add('translucent');
+                return;
+            }
+            try {
+                const now = new Date();
+                let isDifferentDay = false;
+                if (baseTimezone && localTimezone) {
+                    const baseDate = new Intl.DateTimeFormat('en-CA', { timeZone: baseTimezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+                    const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: localTimezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+                    isDifferentDay = baseDate !== localDate;
+                }
+                const formatted = new Intl.DateTimeFormat('zh-TW', { timeZone: localTimezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(now);
+                localTimeText.textContent = isDifferentDay
+                    ? `當地時間：${formatted}（日期不同，請留意首頁步數）`
+                    : `當地時間：${formatted}`;
+                localTimeDisplay.classList.toggle('error', isDifferentDay);
+                localTimeDisplay.classList.toggle('translucent', !isDifferentDay);
+            } catch (err) {
+                localTimeText.textContent = '當地時間：取得失敗';
+            }
+        }
+
+        function startLocalClock() {
+            if (localClockTimer) clearInterval(localClockTimer);
+            renderLocalTime();
+            localClockTimer = setInterval(renderLocalTime, 1000);
+        }
+
+        function shouldRefreshTimezone(lat, lng) {
+            if (lastTimezoneLookup.lat === null) return true;
+            return Math.abs(lat - lastTimezoneLookup.lat) > 0.2 || Math.abs(lng - lastTimezoneLookup.lng) > 0.2;
+        }
+
+        async function updateLocalTimezoneByLatLng(lat, lng, { setAsBase = false } = {}) {
+            try {
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&current=temperature_2m&timezone=auto`;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.reason || 'timezone lookup failed');
+                if (!data.timezone) throw new Error('找不到時區');
+                localTimezone = data.timezone;
+                lastTimezoneLookup = { lat, lng };
+                if (setAsBase || !baseTimezone) baseTimezone = data.timezone;
+                startLocalClock();
+            } catch (err) {
+                localTimezone = null;
+                renderLocalTime();
+            }
+        }
+
+        function scheduleTimezoneRefresh(lat, lng, opts = {}) {
+            if (!opts.force && !shouldRefreshTimezone(lat, lng)) return;
+            if (timezoneLookupTimer) clearTimeout(timezoneLookupTimer);
+            timezoneLookupTimer = setTimeout(() => {
+                timezoneLookupTimer = null;
+                updateLocalTimezoneByLatLng(lat, lng, opts);
+            }, 250);
+        }
+
+        // ---------- Origin overlay ----------
+        function renderOriginDisplay() {
+            const p = appSettings.origin_position;
+            if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
+                originDisplay.classList.remove('warn');
+                originDisplay.classList.add('translucent');
+                originText.textContent = `已儲存原始位置: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+            } else {
+                originDisplay.classList.add('warn');
+                originDisplay.classList.remove('translucent');
+                originText.textContent = '尚未儲存原始位置';
+            }
+        }
+
+        // ---------- Settings persistence ----------
         function getMapState() {
-            const center = map.getCenter();
-            return {
-                center: clampLatLng(center.lat, center.lng),
-                zoom: Math.max(1, Math.min(20, map.getZoom())),
-            };
-        }
-
-        function renderFavorites() {
-            const prev = favoriteSelect.value;
-            favoriteSelect.innerHTML = '<option value="">收藏地點</option>';
-            appSettings.favorites.forEach((fav, idx) => {
-                const option = document.createElement('option');
-                option.value = `fav:${idx}`;
-                option.textContent = `★ ${fav.name} (${fav.lat.toFixed(4)}, ${fav.lng.toFixed(4)})`;
-                favoriteSelect.appendChild(option);
-            });
-
-            appSettings.flower_spots.forEach((flower, idx) => {
-                const option = document.createElement('option');
-                option.value = `flower:${idx}`;
-                option.textContent = `✿ ${flower.name} (${flower.lat.toFixed(4)}, ${flower.lng.toFixed(4)})`;
-                favoriteSelect.appendChild(option);
-            });
-
-            if (prev) {
-                favoriteSelect.value = prev;
-            }
-        }
-
-        function renderRoutePresets() {
-            const prev = routePresetSelect.value;
-            routePresetSelect.innerHTML = '<option value="">已存路徑</option>';
-            appSettings.saved_routes.forEach((route, idx) => {
-                const option = document.createElement('option');
-                option.value = String(idx);
-                option.textContent = `${route.name} (${route.points.length} 點)`;
-                routePresetSelect.appendChild(option);
-            });
-            if (prev && Number(prev) < appSettings.saved_routes.length) {
-                routePresetSelect.value = prev;
-            }
+            const c = map.getCenter();
+            return { center: clampLatLng(c.lat, c.lng), zoom: Math.max(1, Math.min(20, map.getZoom())) };
         }
 
         async function saveSettingsPartial(partial) {
@@ -507,34 +536,11 @@
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'settings save error');
-
-                if (data.settings) {
-                    appSettings = {
-                        ...appSettings,
-                        ...data.settings,
-                        ...partial,
-                    };
-                } else {
-                    appSettings = {
-                        ...appSettings,
-                        ...partial,
-                    };
-                }
-
-                renderFavorites();
-                renderRoutePresets();
-                renderFlowerSpots();
+                if (data.settings) appSettings = { ...appSettings, ...data.settings, ...partial };
+                else appSettings = { ...appSettings, ...partial };
                 renderOriginDisplay();
             } catch (err) {
-                console.warn('save settings failed', err);
-
-                appSettings = {
-                    ...appSettings,
-                    ...partial,
-                };
-                renderFavorites();
-                renderRoutePresets();
-                renderFlowerSpots();
+                appSettings = { ...appSettings, ...partial };
                 renderOriginDisplay();
             }
         }
@@ -545,32 +551,20 @@
                 last_position: currentLatLng(),
                 origin_position: appSettings.origin_position,
                 favorites: appSettings.favorites,
-                flower_spots: appSettings.flower_spots,
                 saved_routes: appSettings.saved_routes,
             };
-
             try {
                 const body = JSON.stringify(payload);
                 if (navigator.sendBeacon) {
-                    const blob = new Blob([body], { type: 'application/json' });
-                    navigator.sendBeacon('/api/settings', blob);
+                    navigator.sendBeacon('/api/settings', new Blob([body], { type: 'application/json' }));
                     return;
                 }
-                fetch('/api/settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body,
-                    keepalive: true,
-                });
-            } catch (err) {
-                console.warn('flush settings failed', err);
-            }
+                fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
+            } catch (err) { /* ignore */ }
         }
 
         function scheduleSaveMapState() {
-            if (settingsSaveTimer) {
-                clearTimeout(settingsSaveTimer);
-            }
+            if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
             settingsSaveTimer = setTimeout(() => {
                 settingsSaveTimer = null;
                 saveSettingsPartial({ map: getMapState() });
@@ -582,30 +576,21 @@
                 const res = await fetch('/api/settings');
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'settings load error');
-
                 appSettings = {
                     map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
                     last_position: null,
                     origin_position: null,
                     favorites: [],
-                    flower_spots: [],
                     saved_routes: [],
                     ...data,
                 };
-
-                renderFavorites();
-                renderRoutePresets();
-                renderFlowerSpots();
                 renderOriginDisplay();
-                updateMarkFlowerButton();
-
                 if (appSettings.map && appSettings.map.center) {
                     const center = appSettings.map.center;
                     const zoom = Number(appSettings.map.zoom || 12);
                     map.setView([center.lat, center.lng], Math.max(1, Math.min(20, zoom)), { animate: false });
                     setInputs(center.lat, center.lng);
                 }
-
                 if (appSettings.last_position) {
                     const p = appSettings.last_position;
                     if (!marker) marker = L.marker([p.lat, p.lng]).addTo(map);
@@ -614,165 +599,40 @@
                 }
                 return Boolean(data._persisted);
             } catch (err) {
-                setStatus(`讀取設定失敗，使用預設值`, true);
+                pushToast('讀取設定失敗，使用預設值', 'error');
                 renderOriginDisplay();
                 return false;
             }
         }
 
-        function upsertFavorite(name, lat, lng) {
-            const normalized = String(name || '').trim();
-            if (!normalized) {
-                setStatus('收藏名稱不可為空', true);
-                return;
-            }
-            const clamped = clampLatLng(lat, lng);
-            const idx = appSettings.favorites.findIndex((f) => f.name === normalized);
-            if (idx >= 0) {
-                appSettings.favorites[idx] = { name: normalized, lat: clamped.lat, lng: clamped.lng };
-            } else {
-                appSettings.favorites.push({ name: normalized, lat: clamped.lat, lng: clamped.lng });
-            }
-            renderFavorites();
-            saveSettingsPartial({ favorites: appSettings.favorites });
-            setStatus(`已收藏地點: ${normalized}`);
-        }
-
-        function deleteSelectedFavorite() {
-            const val = favoriteSelect.value;
-            if (!val || !val.startsWith('fav:')) {
-                setStatus('請先選擇要刪除的收藏地點', true);
-                return;
-            }
-            const idx = Number(val.replace('fav:', ''));
-            const name = appSettings.favorites[idx].name;
-            appSettings.favorites.splice(idx, 1);
-            renderFavorites();
-            saveSettingsPartial({ favorites: appSettings.favorites });
-            setStatus(`已刪除收藏地點: ${name}`);
-        }
-
-        function upsertRoutePreset(name, points) {
-            const normalized = String(name || '').trim();
-            if (!normalized) {
-                setStatus('路徑名稱不可為空', true);
-                return;
-            }
-            if (!Array.isArray(points) || points.length < 2) {
-                setStatus('路徑至少需要 2 個點才能儲存', true);
-                return;
-            }
-
-            const cleanedPoints = points
-                .map((p) => clampLatLng(Number(p.lat), Number(p.lng)))
-                .filter((p) => !Number.isNaN(p.lat) && !Number.isNaN(p.lng));
-
-            if (cleanedPoints.length < 2) {
-                setStatus('路徑點格式錯誤，無法儲存', true);
-                return;
-            }
-
-            const idx = appSettings.saved_routes.findIndex((r) => r.name === normalized);
-            const routePayload = { name: normalized, points: cleanedPoints };
-            if (idx >= 0) {
-                appSettings.saved_routes[idx] = routePayload;
-            } else {
-                appSettings.saved_routes.push(routePayload);
-            }
-
-            renderRoutePresets();
-            saveSettingsPartial({ saved_routes: appSettings.saved_routes });
-            setStatus(`已儲存路徑: ${normalized}（${cleanedPoints.length} 點）`);
-        }
-
-        function loadSelectedRoutePreset() {
-            const idx = Number(routePresetSelect.value);
-            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.saved_routes.length) {
-                setStatus('請先選擇要載入的路徑', true);
-                return;
-            }
-
-            const route = appSettings.saved_routes[idx];
-            routePoints = route.points.map((p) => clampLatLng(p.lat, p.lng));
-            updateRouteVisuals();
-            const first = routePoints[0];
-            const last = routePoints[routePoints.length - 1];
-            map.fitBounds([[first.lat, first.lng], [last.lat, last.lng]], { padding: [30, 30] });
-            setStatus(`已載入路徑: ${route.name}（${routePoints.length} 點）`);
-        }
-
-        function deleteSelectedRoutePreset() {
-            const idx = Number(routePresetSelect.value);
-            if (Number.isNaN(idx) || idx < 0 || idx >= appSettings.saved_routes.length) {
-                setStatus('請先選擇要刪除的路徑', true);
-                return;
-            }
-
-            const name = appSettings.saved_routes[idx].name;
-            appSettings.saved_routes.splice(idx, 1);
-            renderRoutePresets();
-            saveSettingsPartial({ saved_routes: appSettings.saved_routes });
-            setStatus(`已刪除路徑: ${name}`);
-        }
-
-        function metersToLatDelta(meters) {
-            return meters / 111320;
-        }
-
-        function metersToLngDelta(meters, latitude) {
-            const cosLat = Math.cos((latitude * Math.PI) / 180);
-            const denom = Math.max(1e-6, 111320 * Math.abs(cosLat));
-            return meters / denom;
-        }
-
-        function clampLatLng(lat, lng) {
-            const clampedLat = Math.max(-90, Math.min(90, lat));
-            let wrappedLng = lng;
-            if (wrappedLng > 180) wrappedLng -= 360;
-            if (wrappedLng < -180) wrappedLng += 360;
-            return { lat: clampedLat, lng: wrappedLng };
-        }
-
-        function setInputs(lat, lng) {
-            coordTextInput.value = `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
-        }
-
         function setInitialView(lat, lng) {
-            const clamped = clampLatLng(lat, lng);
-            setInputs(clamped.lat, clamped.lng);
-            map.setView([clamped.lat, clamped.lng], 16, { animate: false });
-            if (!marker) marker = L.marker([clamped.lat, clamped.lng]).addTo(map);
-            marker.setLatLng([clamped.lat, clamped.lng]);
-
-            scheduleTimezoneRefresh(clamped.lat, clamped.lng);
+            const c = clampLatLng(lat, lng);
+            setInputs(c.lat, c.lng);
+            map.setView([c.lat, c.lng], 16, { animate: false });
+            if (!marker) marker = L.marker([c.lat, c.lng]).addTo(map);
+            marker.setLatLng([c.lat, c.lng]);
+            scheduleTimezoneRefresh(c.lat, c.lng);
         }
 
         function markInitialPosition(lat, lng) {
-            const clamped = clampLatLng(lat, lng);
+            const c = clampLatLng(lat, lng);
             if (!initialMarker) {
-                initialMarker = L.circleMarker([clamped.lat, clamped.lng], {
-                    radius: 10,
-                    color: '#f59e0b',
-                    weight: 3,
-                    fillColor: '#fde68a',
-                    fillOpacity: 0.65,
+                initialMarker = L.circleMarker([c.lat, c.lng], {
+                    radius: 10, color: '#f59e0b', weight: 3, fillColor: '#fde68a', fillOpacity: 0.65,
                 }).addTo(map);
                 initialMarker.bindTooltip('初始位置', { permanent: true, direction: 'right', offset: [10, 0] });
             } else {
-                initialMarker.setLatLng([clamped.lat, clamped.lng]);
+                initialMarker.setLatLng([c.lat, c.lng]);
             }
-            initialMarker.bindPopup(`初始位置<br/>${clamped.lat.toFixed(6)}, ${clamped.lng.toFixed(6)}`);
+            initialMarker.bindPopup(`初始位置<br/>${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`);
         }
 
         function initFromBrowserGps() {
             return new Promise((resolve) => {
                 if (!navigator.geolocation) {
-                    setStatus('瀏覽器不支援 GPS，使用預設初始位置', true);
-                    resolve(false);
-                    return;
+                    pushToast('瀏覽器不支援 GPS，使用預設初始位置', 'error');
+                    resolve(false); return;
                 }
-
-                setStatus('正在請求網頁 GPS 位置...');
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
                         const lat = pos.coords.latitude;
@@ -781,185 +641,32 @@
                         markInitialPosition(lat, lng);
                         scheduleTimezoneRefresh(lat, lng, { force: true, setAsBase: true });
                         scheduleSaveMapState();
-                        setStatus(`已使用網頁 GPS 作為初始位置: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                        pushToast(`已使用網頁 GPS 作為初始位置: ${lat.toFixed(6)}, ${lng.toFixed(6)}`, 'ok');
                         resolve(true);
                     },
                     (err) => {
-                        const msg = err && err.message ? err.message : '未知錯誤';
-                        setStatus(`無法取得網頁 GPS，使用預設初始位置: ${msg}`, true);
+                        pushToast(`無法取得網頁 GPS，使用預設初始位置: ${err && err.message ? err.message : '未知錯誤'}`, 'error');
                         resolve(false);
                     },
-                    {
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 30000,
-                    }
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
                 );
             });
         }
 
-        function updateDrawRouteButton() {
-            drawRouteBtn.classList.toggle('active', drawRouteMode);
-            drawRouteBtn.textContent = drawRouteMode ? '結束繪製' : '畫路徑';
-            if (easyDrawRouteBtn) {
-                easyDrawRouteBtn.classList.toggle('active', drawRouteMode);
-            }
-        }
-
-        function updatePlaybackButtons() {
-            playRouteBtn.classList.toggle('active', routePlaybackActive);
-            playRouteBtn.textContent = routePlaybackActive ? '暫停路徑' : '播放路徑';
-            if (easyPlayRouteBtn) {
-                easyPlayRouteBtn.classList.toggle('active', routePlaybackActive);
-            }
-        }
-
+        // ---------- Route visuals ----------
         function updateRouteVisuals() {
             if (routePoints.length < 2) {
-                if (routeLine) {
-                    map.removeLayer(routeLine);
-                    routeLine = null;
-                }
+                if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
                 return;
             }
-
-            const latlngs = routePoints.map((p) => [p.lat, p.lng]);
-            if (!routeLine) {
-                routeLine = L.polyline(latlngs, {
-                    color: '#2563eb',
-                    weight: 4,
-                    opacity: 0.85,
-                }).addTo(map);
-            } else {
-                routeLine.setLatLngs(latlngs);
-            }
-        }
-
-        async function clearRoute() {
-            routePoints = [];
-            routePlaybackActive = false;
-            routePlaybackIndex = 0;
-            pendingLocation = null;
-            if (routeLine) {
-                map.removeLayer(routeLine);
-                routeLine = null;
-            }
-            updatePlaybackButtons();
-            try {
-                await fetch('/api/stop-movement', { method: 'POST' });
-            } catch (err) {
-                console.warn('stop-movement failed', err);
-            }
-        }
-
-        function addRoutePoint(lat, lng) {
-            routePoints.push(clampLatLng(lat, lng));
-            updateRouteVisuals();
-            setStatus(`路徑點已加入（${routePoints.length} 點）`);
-        }
-
-        async function stopRoutePlayback(showStatus = true) {
-            routePlaybackActive = false;
-            updatePlaybackButtons();
-            try {
-                await fetch('/api/stop-movement', { method: 'POST' });
-            } catch (err) {
-                console.warn('stop-movement failed', err);
-            }
-            if (showStatus) {
-                setStatus('已停止路徑播放');
-            }
-        }
-
-        async function startRoutePlayback() {
-            if (routePoints.length < 2) {
-                setStatus('請先畫至少 2 個路徑點才能播放', true);
-                return;
-            }
-
-            drawRouteMode = false;
-            updateDrawRouteButton();
-
-            const mode = moveModeEl.value === 'instant' ? 'walk' : moveModeEl.value;
-            try {
-                const res = await fetch('/api/play-route', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ points: routePoints, mode }),
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || '啟動播放失敗');
-                routePlaybackActive = true;
-                updatePlaybackButtons();
-                setStatus(`後端沿路徑播放中（${routePoints.length} 點，模式 ${mode}）— 關掉網頁仍會繼續`);
-            } catch (err) {
-                setStatus(`啟動路徑播放失敗: ${err.message}`, true);
-            }
-        }
-
-        function buildGpx(points) {
-            const now = new Date().toISOString();
-            const trkpts = points
-                .map((p) => `        <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><time>${now}</time></trkpt>`)
-                .join('\n');
-
-            return `<?xml version="1.0" encoding="UTF-8"?>\n` +
-                `<gpx version="1.1" creator="simple-ios-location" xmlns="http://www.topografix.com/GPX/1/1">\n` +
-                `  <trk>\n` +
-                `    <name>simple-ios-location route</name>\n` +
-                `    <trkseg>\n${trkpts}\n    </trkseg>\n` +
-                `  </trk>\n` +
-                `</gpx>\n`;
-        }
-
-        function downloadTextFile(filename, text) {
-            const blob = new Blob([text], { type: 'application/gpx+xml;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function parseGpxText(gpxText) {
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(gpxText, 'application/xml');
-            if (xmlDoc.querySelector('parsererror')) {
-                throw new Error('GPX 格式無法解析');
-            }
-
-            const result = [];
-            const trkpts = xmlDoc.getElementsByTagName('trkpt');
-            const rtepts = xmlDoc.getElementsByTagName('rtept');
-            const points = trkpts.length > 0 ? trkpts : rtepts;
-
-            for (let i = 0; i < points.length; i += 1) {
-                const node = points[i];
-                const lat = Number(node.getAttribute('lat'));
-                const lng = Number(node.getAttribute('lon'));
-                if (Number.isNaN(lat) || Number.isNaN(lng)) {
-                    continue;
-                }
-                result.push(clampLatLng(lat, lng));
-            }
-
-            if (result.length < 2) {
-                throw new Error('GPX 至少需要 2 個路徑點');
-            }
-
-            return result;
+            const ll = routePoints.map((p) => [p.lat, p.lng]);
+            if (!routeLine) routeLine = L.polyline(ll, { color: '#2563eb', weight: 4, opacity: 0.85 }).addTo(map);
+            else routeLine.setLatLngs(ll);
         }
 
         function clearSmoothVisuals() {
-            if (targetMarker) {
-                map.removeLayer(targetMarker);
-                targetMarker = null;
-            }
-            if (targetLine) {
-                map.removeLayer(targetLine);
-                targetLine = null;
-            }
+            if (targetMarker) { map.removeLayer(targetMarker); targetMarker = null; }
+            if (targetLine) { map.removeLayer(targetLine); targetLine = null; }
         }
 
         function updateSmoothVisuals(current, target) {
@@ -969,13 +676,9 @@
             } else {
                 targetMarker.setLatLng([target.lat, target.lng]);
             }
-
             if (!targetLine) {
                 targetLine = L.polyline([[current.lat, current.lng], [target.lat, target.lng]], {
-                    color: '#0f766e',
-                    weight: 4,
-                    opacity: 0.8,
-                    dashArray: '10, 8'
+                    color: '#0f766e', weight: 4, opacity: 0.8, dashArray: '10, 8',
                 }).addTo(map);
             } else {
                 targetLine.setLatLngs([[current.lat, current.lng], [target.lat, target.lng]]);
@@ -987,67 +690,48 @@
             marker.setLatLng([lat, lng]);
             setInputs(lat, lng);
             map.panTo([lat, lng], { animate: false });
-
             scheduleTimezoneRefresh(lat, lng);
         }
 
-        async function sendLocation(lat, lng, options = {}) {
-            const { silent = false } = options;
-            if (busy) {
-                pendingLocation = { lat, lng, silent };
-                return;
-            }
+        async function sendLocation(lat, lng, { silent = false } = {}) {
+            if (busy) { pendingLocation = { lat, lng, silent }; return; }
             busy = true;
-            if (!silent) {
-                setStatus('正在更新定位中...');
-            }
             try {
                 const res = await fetch('/api/set-location', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lat, lng })
+                    body: JSON.stringify({ lat, lng }),
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '設定失敗');
-
                 applyLocalPosition(lat, lng);
                 appSettings.last_position = { lat, lng };
                 if (!silent) {
                     scheduleSaveMapState();
                     saveSettingsPartial({ last_position: { lat, lng } });
-                    setStatus(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)} (WASD 最高 ${currentSpeedKmh} km/h)`);
+                    pushToast(`定位已更新: ${lat.toFixed(6)}, ${lng.toFixed(6)}`, 'ok');
                     await refreshSessionStatus();
                 }
             } catch (err) {
-                setStatus(`更新失敗: ${err.message}`, true);
+                pushToast(`更新失敗: ${err.message}`, 'error');
                 await refreshSessionStatus();
             } finally {
                 busy = false;
                 if (pendingLocation) {
-                    const next = pendingLocation;
-                    pendingLocation = null;
+                    const next = pendingLocation; pendingLocation = null;
                     sendLocation(next.lat, next.lng, { silent: next.silent });
                 }
             }
         }
 
         async function moveByMode(lat, lng) {
-            if (markFlowerMode) {
-                addFlowerAt(lat, lng);
-                markFlowerMode = false;
-                updateMarkFlowerButton();
-                return;
-            }
-
             const mode = moveModeEl.value;
             const clamp = clampLatLng(lat, lng);
-
             if (mode === 'instant') {
                 clearSmoothVisuals();
                 await sendLocation(clamp.lat, clamp.lng);
                 return;
             }
-
             try {
                 const res = await fetch('/api/move', {
                     method: 'POST',
@@ -1057,275 +741,413 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '移動失敗');
                 updateSmoothVisuals(currentLatLng(), { lat: clamp.lat, lng: clamp.lng });
-                setStatus(`後端移動中 → ${clamp.lat.toFixed(6)}, ${clamp.lng.toFixed(6)}（${moveModeEl.options[moveModeEl.selectedIndex].text}）`);
+                pushToast(`後端移動中 → ${clamp.lat.toFixed(4)}, ${clamp.lng.toFixed(4)}（${moveModeEl.options[moveModeEl.selectedIndex].text}）`, 'info');
             } catch (err) {
-                setStatus(`啟動移動失敗: ${err.message}`, true);
+                pushToast(`啟動移動失敗: ${err.message}`, 'error');
             }
         }
 
-        function parseCoordinateText(raw) {
-            const text = String(raw || '').trim();
-            if (!text) return null;
-
-            const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-
-            for (const line of lines.length ? lines : [text]) {
-                const match = line.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
-                if (!match) continue;
-
-                const lat = Number(match[1]);
-                const lng = Number(match[2]);
-
-                if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
-                if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
-
-                return { lat, lng };
-            }
-
-            return null;
+        // ---------- Go / Search ----------
+        function showCandidates(list) {
+            candidatesEl.innerHTML = '';
+            if (!list || !list.length) { candidatesEl.style.display = 'none'; return; }
+            list.slice(0, 5).forEach((c) => {
+                const item = document.createElement('div');
+                item.className = 'candidate';
+                item.innerHTML = `<div class="name"></div><div class="coord"></div>`;
+                item.querySelector('.name').textContent = c.display_name;
+                item.querySelector('.coord').textContent = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
+                item.addEventListener('click', () => {
+                    candidatesEl.style.display = 'none';
+                    setInputs(c.lat, c.lng);
+                    moveByMode(c.lat, c.lng);
+                });
+                candidatesEl.appendChild(item);
+            });
+            candidatesEl.style.display = '';
         }
 
-        function validateCoordText(showError = false) {
+        function hideCandidates() { candidatesEl.style.display = 'none'; }
+        document.addEventListener('mousedown', (e) => {
+            if (!e.target.closest('#candidates') && !e.target.closest('.input-wrap')) hideCandidates();
+        });
+
+        goBtn.addEventListener('click', () => {
             const parsed = parseCoordinateText(coordTextInput.value);
-            if (!parsed) {
-                if (showError && coordTextInput.value.trim()) {
-                    setStatus('座標格式錯誤，請使用 lat,lng', true);
-                }
-                return null;
-            }
-            return parsed;
-        }
-
-        map.on('click', (e) => {
-            const { lat, lng } = e.latlng;
-            if (drawRouteMode) {
-                addRoutePoint(lat, lng);
-                return;
-            }
-            moveByMode(lat, lng);
+            if (!parsed) { pushToast('座標格式錯誤，請改用搜索', 'error'); return; }
+            hideCandidates();
+            moveByMode(parsed.lat, parsed.lng);
         });
 
-        document.getElementById('applyBtn').addEventListener('click', async () => {
-            const parsed = validateCoordText(true);
-            if (!parsed) {
-                setStatus('請先輸入有效經緯度 (格式: lat,lng)', true);
-                return;
-            }
-            setInputs(parsed.lat, parsed.lng);
-            map.panTo([parsed.lat, parsed.lng]);
-            await moveByMode(parsed.lat, parsed.lng);
+        coordTextInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); goBtn.click(); }
         });
 
-        coordTextInput.addEventListener('keydown', (evt) => {
-            if (evt.key === 'Enter') {
-                evt.preventDefault();
-                document.getElementById('applyBtn').click();
-            }
-        });
-
-        saveOriginBtn.addEventListener('click', async () => {
-            const p = currentLatLng();
-            const origin = { lat: p.lat, lng: p.lng };
-
-            appSettings.origin_position = origin;
-            renderOriginDisplay();
-            setStatus(`已儲存原始位置: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`);
-
-            await saveSettingsPartial({ origin_position: origin });
-        });
-
-        goOriginBtn.addEventListener('click', async () => {
-            const p = appSettings.origin_position;
-            if (!p || typeof p.lat !== 'number' || typeof p.lng !== 'number') {
-                setStatus('尚未儲存原始位置', true);
-                return;
-            }
-
+        searchBtn.addEventListener('click', async () => {
+            const q = coordTextInput.value.trim();
+            if (!q) { pushToast('請先輸入地址', 'error'); return; }
+            searchBtn.disabled = true;
             try {
-                routePlaybackActive = false;
-                updatePlaybackButtons();
-                pendingLocation = null;
-                clearSmoothVisuals();
-                pressed.clear();
-                stopMoveTimerIfIdle();
-
-                map.panTo([p.lat, p.lng]);
-                await sendLocation(p.lat, p.lng);
-                setStatus(`已跳回原始位置，正在解除 fake location...`);
-
-                const res = await fetch('/api/clear-location', { method: 'POST' });
+                const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || '清除失敗');
-
-                if (marker) {
-                    map.removeLayer(marker);
-                    marker = null;
+                if (!res.ok) throw new Error(data.error || '搜尋失敗');
+                const results = data.results || [];
+                if (!results.length) { pushToast('找不到結果', 'error'); hideCandidates(); return; }
+                if (results.length === 1) {
+                    const c = results[0];
+                    setInputs(c.lat, c.lng);
+                    hideCandidates();
+                    moveByMode(c.lat, c.lng);
+                } else {
+                    showCandidates(results);
                 }
-
-                setStatus(`已回到原始位置，並解除 fake location`);
-                await refreshSessionStatus();
             } catch (err) {
-                setStatus(`回到原始位置失敗: ${err.message}`, true);
-                await refreshSessionStatus();
+                pushToast(`搜尋失敗: ${err.message}`, 'error');
+            } finally {
+                searchBtn.disabled = false;
             }
         });
 
-        saveFavoriteBtn.addEventListener('click', () => {
-            const p = currentLatLng();
-            const suggested = `收藏-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
-            const name = window.prompt('請輸入收藏名稱', suggested);
-            if (name === null) return;
-            upsertFavorite(name, p.lat, p.lng);
-        });
-
-        goFavoriteBtn.addEventListener('click', async () => {
-            const val = favoriteSelect.value;
-            if (!val) {
-                setStatus('請先選擇收藏地點', true);
-                return;
-            }
-            if (val.startsWith('fav:')) {
-                const idx = Number(val.replace('fav:', ''));
-                if (idx < 0 || idx >= appSettings.favorites.length) return;
-                const p = appSettings.favorites[idx];
-                map.panTo([p.lat, p.lng]);
-                await moveByMode(p.lat, p.lng);
-            } else if (val.startsWith('flower:')) {
-                const idx = Number(val.replace('flower:', ''));
-                if (idx < 0 || idx >= appSettings.flower_spots.length) return;
-                const p = appSettings.flower_spots[idx];
-                map.panTo([p.lat, p.lng]);
-                await moveByMode(p.lat, p.lng);
-            }
-        });
-
-        deleteFavoriteBtn.addEventListener('click', () => {
-            const val = favoriteSelect.value;
-            if (!val) return;
-            if (val.startsWith('fav:')) {
-                deleteSelectedFavorite();
-            } else if (val.startsWith('flower:')) {
-                deleteFlower(Number(val.replace('flower:', '')));
-            }
-        });
-
-        saveRouteBtn.addEventListener('click', () => {
-            if (routePoints.length < 2) {
-                setStatus('請先畫路徑或匯入 GPX 後再儲存', true);
-                return;
-            }
-            const suggested = `路徑-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
-            const name = window.prompt('請輸入路徑名稱', suggested);
-            if (name === null) return;
-            upsertRoutePreset(name, routePoints);
-        });
-
-        loadRouteBtn.addEventListener('click', () => {
-            loadSelectedRoutePreset();
-        });
-
-        deleteRouteBtn.addEventListener('click', () => {
-            deleteSelectedRoutePreset();
-        });
-
-        drawRouteBtn.addEventListener('click', () => {
-            drawRouteMode = !drawRouteMode;
-            if (drawRouteMode) {
-                markFlowerMode = false;
-                updateMarkFlowerButton();
-            }
-            updateDrawRouteButton();
-            setStatus(drawRouteMode ? '路徑繪製模式：點地圖可新增路徑點' : '已離開路徑繪製模式');
-        });
-
-        markFlowerBtn.addEventListener('click', () => {
-            markFlowerMode = !markFlowerMode;
-            if (markFlowerMode) {
-                drawRouteMode = false;
-                updateDrawRouteButton();
-            }
-            updateMarkFlowerButton();
-            setStatus(markFlowerMode ? '種花模式：點擊地圖位置即可種花' : '已離開種花模式');
-        });
-
-        clearRouteBtn.addEventListener('click', () => {
-            clearRoute();
-            setStatus('路徑已清空');
-        });
-
-        playRouteBtn.addEventListener('click', async () => {
-            if (routePlaybackActive) {
-                await stopRoutePlayback();
-                clearSmoothVisuals();
-                return;
-            }
-            await startRoutePlayback();
-        });
-
-        toggleManageBtn.addEventListener('click', () => {
-            topBar.classList.toggle('manage-open');
-            toggleManageBtn.textContent = topBar.classList.contains('manage-open') ? '收合功能' : '更多功能';
-        });
-
-        sessionToggleBtn.addEventListener('click', async () => {
-            await toggleSessionConnection();
-        });
-
-        exportGpxBtn.addEventListener('click', () => {
-            if (routePoints.length < 2) {
-                setStatus('請先畫至少 2 個路徑點才能匯出 GPX', true);
-                return;
-            }
-            const gpx = buildGpx(routePoints);
-            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-            downloadTextFile(`route-${stamp}.gpx`, gpx);
-            setStatus(`GPX 已匯出（${routePoints.length} 點）`);
-        });
-
-        importGpxBtn.addEventListener('click', () => {
-            gpxFileInput.click();
-        });
-
-        const routeEasyBar = L.easyBar([
-            L.easyButton('<span title="畫路徑">✎</span>', () => {
-                drawRouteBtn.click();
-            }, '畫路徑'),
-            L.easyButton('<span title="清空路徑">⌫</span>', () => {
-                clearRouteBtn.click();
-            }, '清空路徑'),
-            L.easyButton('<span title="播放路徑">▶</span>', () => {
-                playRouteBtn.click();
-            }, '播放路徑'),
-            L.easyButton('<span title="儲存路徑">💾</span>', () => {
-                saveRouteBtn.click();
-            }, '儲存路徑'),
-            L.easyButton('<span title="匯入 GPX">⤓</span>', () => {
-                importGpxBtn.click();
-            }, '匯入 GPX'),
-            L.easyButton('<span title="匯出 GPX">⤒</span>', () => {
-                exportGpxBtn.click();
-            }, '匯出 GPX')
-        ], {
-            position: 'topleft'
-        }).addTo(map);
-
-        const routeEasyBarContainer = routeEasyBar.getContainer();
-        if (routeEasyBarContainer) {
-            routeEasyBarContainer.classList.add('route-easybar-midleft');
+        // ---------- Favorites / Routes ----------
+        function upsertFavorite(name, lat, lng) {
+            const n = String(name || '').trim();
+            if (!n) { pushToast('收藏名稱不可為空', 'error'); return; }
+            const c = clampLatLng(lat, lng);
+            const idx = appSettings.favorites.findIndex((f) => f.name === n);
+            if (idx >= 0) appSettings.favorites[idx] = { name: n, lat: c.lat, lng: c.lng };
+            else appSettings.favorites.push({ name: n, lat: c.lat, lng: c.lng });
+            saveSettingsPartial({ favorites: appSettings.favorites });
+            pushToast(`已收藏地點: ${n}`, 'ok');
         }
 
-        const easyButtons = document.querySelectorAll('.leaflet-control .easy-button-button');
-        if (easyButtons.length >= 3) {
-            easyDrawRouteBtn = easyButtons[0];
-            easyDrawRouteBtn.classList.toggle('active', drawRouteMode);
-            easyPlayRouteBtn = easyButtons[2];
-            easyPlayRouteBtn.classList.toggle('active', routePlaybackActive);
+        function upsertRoutePreset(name, points) {
+            const n = String(name || '').trim();
+            if (!n) { pushToast('路徑名稱不可為空', 'error'); return; }
+            if (!Array.isArray(points) || points.length < 2) { pushToast('路徑至少需要 2 個點才能儲存', 'error'); return; }
+            const cleaned = points.map((p) => clampLatLng(Number(p.lat), Number(p.lng))).filter((p) => !Number.isNaN(p.lat) && !Number.isNaN(p.lng));
+            if (cleaned.length < 2) { pushToast('路徑點格式錯誤，無法儲存', 'error'); return; }
+            const idx = appSettings.saved_routes.findIndex((r) => r.name === n);
+            const payload = { name: n, points: cleaned };
+            if (idx >= 0) appSettings.saved_routes[idx] = payload;
+            else appSettings.saved_routes.push(payload);
+            saveSettingsPartial({ saved_routes: appSettings.saved_routes });
+            pushToast(`已儲存路徑: ${n}（${cleaned.length} 點）`, 'ok');
+        }
+
+        // ---------- GPX ----------
+        function buildGpx(points) {
+            const now = new Date().toISOString();
+            const trkpts = points.map((p) => `        <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><time>${now}</time></trkpt>`).join('\n');
+            return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="simple-ios-location" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk>\n    <name>simple-ios-location route</name>\n    <trkseg>\n${trkpts}\n    </trkseg>\n  </trk>\n</gpx>\n`;
+        }
+        function downloadTextFile(filename, text) {
+            const blob = new Blob([text], { type: 'application/gpx+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+            URL.revokeObjectURL(url);
+        }
+        function parseGpxText(gpxText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(gpxText, 'application/xml');
+            if (xmlDoc.querySelector('parsererror')) throw new Error('GPX 格式無法解析');
+            const trkpts = xmlDoc.getElementsByTagName('trkpt');
+            const rtepts = xmlDoc.getElementsByTagName('rtept');
+            const points = trkpts.length > 0 ? trkpts : rtepts;
+            const result = [];
+            for (let i = 0; i < points.length; i++) {
+                const lat = Number(points[i].getAttribute('lat'));
+                const lng = Number(points[i].getAttribute('lon'));
+                if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
+                result.push(clampLatLng(lat, lng));
+            }
+            if (result.length < 2) throw new Error('GPX 至少需要 2 個路徑點');
+            return result;
+        }
+
+        // ---------- Route playback ----------
+        async function stopRoutePlayback(showToast = true) {
+            routePlaybackActive = false;
+            renderEasyBar();
+            try { await fetch('/api/stop-movement', { method: 'POST' }); } catch (err) { /* */ }
+            if (showToast) pushToast('已停止路徑播放', 'ok');
+        }
+
+        async function startRoutePlayback() {
+            if (routePoints.length < 2) { pushToast('請先畫至少 2 個路徑點才能播放', 'error'); return; }
+            drawRouteMode = false;
+            const mode = moveModeEl.value === 'instant' ? 'walk' : moveModeEl.value;
+            try {
+                const res = await fetch('/api/play-route', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ points: routePoints, mode }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '啟動播放失敗');
+                routePlaybackActive = true;
+                renderEasyBar();
+                pushToast(`後端沿路徑播放中（${routePoints.length} 點，模式 ${mode}）— 關掉網頁仍會繼續`, 'info');
+            } catch (err) {
+                pushToast(`啟動路徑播放失敗: ${err.message}`, 'error');
+            }
+        }
+
+        async function clearRoute() {
+            routePoints = [];
+            routePlaybackActive = false;
+            routePlaybackIndex = 0;
+            pendingLocation = null;
+            if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+            renderEasyBar();
+            try { await fetch('/api/stop-movement', { method: 'POST' }); } catch (err) { /* */ }
+        }
+
+        function addRoutePoint(lat, lng) {
+            routePoints.push(clampLatLng(lat, lng));
+            updateRouteVisuals();
+            pushToast(`路徑點已加入（${routePoints.length} 點）`, 'info', 1800);
+        }
+
+        // ---------- EasyBar ----------
+        const EASY_ITEMS = [
+            { key: 'save-origin', icon: '📍', title: '儲存原始位置' },
+            { key: 'go-origin',   icon: '🏠', title: '回到原始位置' },
+            { key: 'fav',         icon: '⭐', title: '收藏' },
+            { key: 'routes',      icon: '🛣️', title: '路徑庫' },
+            { key: 'draw',        icon: '✎',  title: '畫路徑' },
+            { key: 'play',        icon: '▶',  title: '播放 / 暫停' },
+            { key: 'clear',       icon: '⌫',  title: '清空路徑' },
+        ];
+
+        function renderEasyBar() {
+            easybarEl.innerHTML = '';
+            EASY_ITEMS.forEach((it) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.title = it.title;
+                b.dataset.key = it.key;
+                b.textContent = (it.key === 'play' && routePlaybackActive) ? '⏸' : it.icon;
+                const isActive =
+                    (it.key === 'draw' && drawRouteMode) ||
+                    (it.key === 'play' && routePlaybackActive) ||
+                    (it.key === 'fav' && openPopover === 'fav') ||
+                    (it.key === 'routes' && openPopover === 'routes');
+                if (isActive) b.classList.add('active');
+                b.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    onEasy(it.key);
+                });
+                easybarEl.appendChild(b);
+            });
+        }
+
+        async function onEasy(key) {
+            if (key === 'save-origin') {
+                const p = currentLatLng();
+                const origin = { lat: p.lat, lng: p.lng };
+                appSettings.origin_position = origin;
+                renderOriginDisplay();
+                await saveSettingsPartial({ origin_position: origin });
+                pushToast(`已儲存原始位置: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`, 'ok');
+            } else if (key === 'go-origin') {
+                const p = appSettings.origin_position;
+                if (!p || typeof p.lat !== 'number' || typeof p.lng !== 'number') {
+                    pushToast('尚未儲存原始位置', 'error');
+                    return;
+                }
+                try {
+                    routePlaybackActive = false;
+                    renderEasyBar();
+                    pendingLocation = null;
+                    clearSmoothVisuals();
+                    pressed.clear(); stopMoveTimerIfIdle();
+                    map.panTo([p.lat, p.lng]);
+                    await sendLocation(p.lat, p.lng);
+                    const res = await fetch('/api/clear-location', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '清除失敗');
+                    if (marker) { map.removeLayer(marker); marker = null; }
+                    pushToast('已回到原始位置，並解除 fake location', 'ok');
+                    await refreshSessionStatus();
+                } catch (err) {
+                    pushToast(`回到原始位置失敗: ${err.message}`, 'error');
+                    await refreshSessionStatus();
+                }
+            } else if (key === 'fav') {
+                togglePopover('fav');
+            } else if (key === 'routes') {
+                togglePopover('routes');
+            } else if (key === 'draw') {
+                drawRouteMode = !drawRouteMode;
+                renderEasyBar();
+                pushToast(drawRouteMode ? '路徑繪製模式：點地圖可新增路徑點' : '已離開路徑繪製模式', 'info');
+            } else if (key === 'play') {
+                if (routePlaybackActive) { await stopRoutePlayback(); clearSmoothVisuals(); }
+                else await startRoutePlayback();
+            } else if (key === 'clear') {
+                await clearRoute();
+                pushToast('路徑已清空', 'info');
+            }
+        }
+
+        // ---------- Popovers ----------
+        function togglePopover(name) {
+            if (openPopover === name) { closePopover(); return; }
+            openPopover = name;
+            renderPopover();
+            renderEasyBar();
+        }
+
+        function closePopover() {
+            openPopover = null;
+            popoverHost.innerHTML = '';
+            renderEasyBar();
+        }
+
+        document.addEventListener('mousedown', (e) => {
+            if (!openPopover) return;
+            if (e.target.closest('.popover') || e.target.closest('.easybar')) return;
+            closePopover();
+        });
+
+        function renderPopover() {
+            popoverHost.innerHTML = '';
+            if (!openPopover) return;
+            if (openPopover === 'fav') popoverHost.appendChild(buildFavPopover());
+            else if (openPopover === 'routes') popoverHost.appendChild(buildRoutesPopover());
+        }
+
+        function buildFavPopover() {
+            const root = document.createElement('div');
+            root.className = 'popover';
+            const items = appSettings.favorites || [];
+            root.innerHTML = `
+                <div class="pop-head"><span>⭐ 收藏地點</span><button class="pop-close" aria-label="關閉">×</button></div>
+                <select class="fav-select"><option value="">${items.length ? '選擇收藏…' : '尚無收藏'}</option></select>
+                <div class="grid2">
+                    <button class="btn sm fav-go" disabled>前往</button>
+                    <button class="btn sm secondary fav-save">收藏目前點</button>
+                    <button class="btn sm danger fav-del" disabled>🗑️ 刪除</button>
+                    <div class="count">${items.length} 筆</div>
+                </div>
+            `;
+            const sel = root.querySelector('.fav-select');
+            items.forEach((f, i) => {
+                const opt = document.createElement('option');
+                opt.value = String(i);
+                opt.textContent = `★ ${f.name} (${f.lat.toFixed(4)}, ${f.lng.toFixed(4)})`;
+                sel.appendChild(opt);
+            });
+            const goBtnEl = root.querySelector('.fav-go');
+            const delBtn = root.querySelector('.fav-del');
+            sel.addEventListener('change', () => {
+                const has = sel.value !== '';
+                goBtnEl.disabled = !has; delBtn.disabled = !has;
+            });
+            goBtnEl.addEventListener('click', async () => {
+                const i = Number(sel.value);
+                const f = appSettings.favorites[i];
+                if (!f) return;
+                closePopover();
+                map.panTo([f.lat, f.lng]);
+                await moveByMode(f.lat, f.lng);
+            });
+            root.querySelector('.fav-save').addEventListener('click', () => {
+                const p = currentLatLng();
+                const suggested = `收藏-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
+                const name = window.prompt('請輸入收藏名稱', suggested);
+                if (name === null) return;
+                upsertFavorite(name, p.lat, p.lng);
+                renderPopover();
+            });
+            delBtn.addEventListener('click', () => {
+                const i = Number(sel.value);
+                const f = appSettings.favorites[i];
+                if (!f) return;
+                appSettings.favorites.splice(i, 1);
+                saveSettingsPartial({ favorites: appSettings.favorites });
+                pushToast(`已刪除收藏地點: ${f.name}`, 'ok');
+                renderPopover();
+            });
+            root.querySelector('.pop-close').addEventListener('click', closePopover);
+            return root;
+        }
+
+        function buildRoutesPopover() {
+            const root = document.createElement('div');
+            root.className = 'popover';
+            const items = appSettings.saved_routes || [];
+            root.innerHTML = `
+                <div class="pop-head"><span>🛣️ 路徑庫</span><button class="pop-close" aria-label="關閉">×</button></div>
+                <select class="route-select"><option value="">${items.length ? '選擇路徑…' : '尚無路徑'}</option></select>
+                <div class="grid2" style="margin-bottom:8px;">
+                    <button class="btn sm route-load" disabled>載入</button>
+                    <button class="btn sm secondary route-save">儲存目前路徑</button>
+                    <button class="btn sm danger route-del" disabled>🗑️ 刪除</button>
+                    <div class="count">${items.length} 筆</div>
+                </div>
+                <div class="divider grid2">
+                    <button class="btn sm ghost route-import">📥 匯入 GPX</button>
+                    <button class="btn sm ghost route-export">📤 匯出 GPX</button>
+                </div>
+            `;
+            const sel = root.querySelector('.route-select');
+            items.forEach((r, i) => {
+                const opt = document.createElement('option');
+                opt.value = String(i);
+                opt.textContent = `${r.name}（${r.points.length} 點）`;
+                sel.appendChild(opt);
+            });
+            const loadBtn = root.querySelector('.route-load');
+            const delBtn = root.querySelector('.route-del');
+            sel.addEventListener('change', () => {
+                const has = sel.value !== '';
+                loadBtn.disabled = !has; delBtn.disabled = !has;
+            });
+            loadBtn.addEventListener('click', () => {
+                const i = Number(sel.value);
+                const r = appSettings.saved_routes[i];
+                if (!r) return;
+                routePoints = r.points.map((p) => clampLatLng(p.lat, p.lng));
+                updateRouteVisuals();
+                const first = routePoints[0];
+                const last = routePoints[routePoints.length - 1];
+                map.fitBounds([[first.lat, first.lng], [last.lat, last.lng]], { padding: [30, 30] });
+                pushToast(`已載入路徑: ${r.name}（${routePoints.length} 點）`, 'ok');
+                closePopover();
+            });
+            root.querySelector('.route-save').addEventListener('click', () => {
+                if (routePoints.length < 2) { pushToast('請先畫路徑或匯入 GPX', 'error'); return; }
+                const suggested = `路徑-${new Date().toLocaleString('zh-TW', { hour12: false })}`;
+                const name = window.prompt('請輸入路徑名稱', suggested);
+                if (name === null) return;
+                upsertRoutePreset(name, routePoints);
+                renderPopover();
+            });
+            delBtn.addEventListener('click', () => {
+                const i = Number(sel.value);
+                const r = appSettings.saved_routes[i];
+                if (!r) return;
+                appSettings.saved_routes.splice(i, 1);
+                saveSettingsPartial({ saved_routes: appSettings.saved_routes });
+                pushToast(`已刪除路徑: ${r.name}`, 'ok');
+                renderPopover();
+            });
+            root.querySelector('.route-import').addEventListener('click', () => gpxFileInput.click());
+            root.querySelector('.route-export').addEventListener('click', () => {
+                if (routePoints.length < 2) { pushToast('請先畫至少 2 個路徑點才能匯出 GPX', 'error'); return; }
+                const gpx = buildGpx(routePoints);
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+                downloadTextFile(`route-${stamp}.gpx`, gpx);
+                pushToast(`GPX 已匯出（${routePoints.length} 點）`, 'ok');
+            });
+            root.querySelector('.pop-close').addEventListener('click', closePopover);
+            return root;
         }
 
         gpxFileInput.addEventListener('change', async () => {
             const file = gpxFileInput.files && gpxFileInput.files[0];
             if (!file) return;
-
             try {
                 const text = await file.text();
                 routePoints = parseGpxText(text);
@@ -1333,28 +1155,28 @@
                 const first = routePoints[0];
                 const last = routePoints[routePoints.length - 1];
                 map.fitBounds([[first.lat, first.lng], [last.lat, last.lng]], { padding: [30, 30] });
-                setStatus(`GPX 匯入成功（${routePoints.length} 點）`);
-
+                pushToast(`GPX 匯入成功（${routePoints.length} 點）`, 'ok');
                 const base = file.name.replace(/\.gpx$/i, '').trim() || '匯入路徑';
                 const shouldSave = window.confirm('是否將此匯入路徑存到「已存路徑」清單？');
-                if (shouldSave) {
-                    upsertRoutePreset(base, routePoints);
-                }
+                if (shouldSave) upsertRoutePreset(base, routePoints);
             } catch (err) {
-                setStatus(`GPX 匯入失敗: ${err.message}`, true);
+                pushToast(`GPX 匯入失敗: ${err.message}`, 'error');
             } finally {
                 gpxFileInput.value = '';
             }
         });
 
-        function currentLatLng() {
-            if (marker) {
-                const p = marker.getLatLng();
-                return { lat: p.lat, lng: p.lng };
-            }
-            const parsed = parseCoordinateText(coordTextInput.value);
-            if (parsed) return parsed;
-            return { lat: 25.033964, lng: 121.564468 };
+        // ---------- Map clicks ----------
+        map.on('click', (e) => {
+            const { lat, lng } = e.latlng;
+            if (drawRouteMode) { addRoutePoint(lat, lng); return; }
+            moveByMode(lat, lng);
+        });
+
+        // ---------- WASD ----------
+        function shouldIgnoreKeyEvent(evt) {
+            const tag = (evt.target && evt.target.tagName) ? evt.target.tagName.toLowerCase() : '';
+            return tag === 'input' || tag === 'textarea' || tag === 'select';
         }
 
         async function tickMove() {
@@ -1362,80 +1184,53 @@
             const step = getStepMeters();
             const latStep = metersToLatDelta(step);
             const lngStep = metersToLngDelta(step, now.lat);
-
             const y = (pressed.has('w') ? 1 : 0) - (pressed.has('s') ? 1 : 0);
             const x = (pressed.has('d') ? 1 : 0) - (pressed.has('a') ? 1 : 0);
             const mag = Math.hypot(x, y);
-            if (mag === 0) {
-                stopMoveTimerIfIdle();
-                return;
-            }
-
-            const nx = x / mag;
-            const ny = y / mag;
+            if (mag === 0) { stopMoveTimerIfIdle(); return; }
+            const nx = x / mag, ny = y / mag;
             const nextLat = now.lat + ny * latStep;
             const nextLng = now.lng + nx * lngStep;
-            const clamped = clampLatLng(nextLat, nextLng);
-            applyLocalPosition(clamped.lat, clamped.lng);
-            await sendLocation(clamped.lat, clamped.lng, { silent: true });
-        }
-
-        function shouldIgnoreKeyEvent(evt) {
-            const tag = (evt.target && evt.target.tagName) ? evt.target.tagName.toLowerCase() : '';
-            return tag === 'input' || tag === 'textarea';
+            const c = clampLatLng(nextLat, nextLng);
+            applyLocalPosition(c.lat, c.lng);
+            await sendLocation(c.lat, c.lng, { silent: true });
         }
 
         function startMoveTimer() {
             if (moveTimer) return;
-            moveTimer = setInterval(() => {
-                tickMove();
-            }, KEY_TICK_MS);
+            moveTimer = setInterval(tickMove, KEY_TICK_MS);
         }
-
         function stopMoveTimerIfIdle() {
-            if (pressed.size === 0 && moveTimer) {
-                clearInterval(moveTimer);
-                moveTimer = null;
-            }
+            if (pressed.size === 0 && moveTimer) { clearInterval(moveTimer); moveTimer = null; }
         }
 
-        window.addEventListener('keydown', (evt) => {
-            if (shouldIgnoreKeyEvent(evt)) return;
-            const key = evt.key.toLowerCase();
-            if (!['w', 'a', 's', 'd'].includes(key)) return;
-            evt.preventDefault();
-            if (!pressed.has(key)) {
+        window.addEventListener('keydown', (e) => {
+            if (shouldIgnoreKeyEvent(e)) return;
+            const k = e.key.toLowerCase();
+            if (!['w', 'a', 's', 'd'].includes(k)) return;
+            e.preventDefault();
+            if (!pressed.has(k)) {
                 fetch('/api/stop-movement', { method: 'POST' }).catch(() => {});
-                if (routePlaybackActive) {
-                    routePlaybackActive = false;
-                    updatePlaybackButtons();
-                }
+                if (routePlaybackActive) { routePlaybackActive = false; renderEasyBar(); }
             }
-            pressed.add(key);
-            startMoveTimer();
+            pressed.add(k); startMoveTimer();
         });
-
-        window.addEventListener('keyup', (evt) => {
-            const key = evt.key.toLowerCase();
-            if (!['w', 'a', 's', 'd'].includes(key)) return;
-            pressed.delete(key);
-            stopMoveTimerIfIdle();
+        window.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if (!['w', 'a', 's', 'd'].includes(k)) return;
+            pressed.delete(k); stopMoveTimerIfIdle();
         });
+        window.addEventListener('blur', () => { pressed.clear(); stopMoveTimerIfIdle(); });
 
-        window.addEventListener('blur', () => {
-            pressed.clear();
-            stopMoveTimerIfIdle();
-        });
-
+        // ---------- Mode change ----------
         moveModeEl.addEventListener('change', () => {
-            const val = moveModeEl.value;
-
-            if (val === 'instant') {
+            const v = moveModeEl.value;
+            if (v === 'instant') {
                 clearSmoothVisuals();
                 currentSpeedKmh = 1000;
-                setStatus(`模式: 直接跳轉`);
+                pushToast('模式: 直接跳轉', 'info');
             } else {
-                switch (val) {
+                switch (v) {
                     case 'walk': currentSpeedKmh = 6; break;
                     case 'bike': currentSpeedKmh = 18; break;
                     case 'scooter': currentSpeedKmh = 60; break;
@@ -1444,64 +1239,11 @@
                     default: currentSpeedKmh = 18;
                 }
                 const label = moveModeEl.options[moveModeEl.selectedIndex].text;
-                setStatus(`模式: ${label}`);
+                pushToast(`模式: ${label}`, 'info');
             }
         });
 
-        map.on('moveend zoomend', scheduleSaveMapState);
-
-        window.addEventListener('beforeunload', flushSettingsOnLeave);
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden') {
-                flushSettingsOnLeave();
-            }
-        });
-
-        async function bootstrap() {
-            setInitialView(25.033964, 121.564468);
-            scheduleTimezoneRefresh(25.033964, 121.564468, { force: true, setAsBase: true });
-            updateDrawRouteButton();
-            updatePlaybackButtons();
-            renderOriginDisplay();
-            renderLocalTime();
-            setStatus(`模式: 腳踏車，速度上限 ${currentSpeedKmh} km/h`);
-            await loadSettings();
-            await initFromBrowserGps();
-        }
-
-        bootstrap();
-
-        const clearBtn = document.getElementById('clearBtn');
-        if (clearBtn) {
-            clearBtn.addEventListener('click', async () => {
-                if (busy) return;
-                busy = true;
-                routePlaybackActive = false;
-                updatePlaybackButtons();
-                clearSmoothVisuals();
-                setStatus('正在恢復真實位置...');
-                try {
-                    const res = await fetch('/api/clear-location', { method: 'POST' });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || '清除失敗');
-                    if (marker) { map.removeLayer(marker); marker = null; }
-                    setStatus(`已恢復真實位置 (WASD 最高 ${currentSpeedKmh} km/h)`);
-                    await refreshSessionStatus();
-                } catch (err) {
-                    setStatus(`恢復失敗: ${err.message}`, true);
-                    await refreshSessionStatus();
-                } finally {
-                    busy = false;
-                }
-            });
-        }
-
-        refreshSessionStatus();
-        setInterval(refreshSessionStatus, 2000);
-
-        let knownDevices = [];
-        let activeUdid = null;
-
+        // ---------- Devices ----------
         function displayNameFor(dev) {
             if (dev.name) return dev.name;
             const tail = (dev.udid || '').slice(-6);
@@ -1517,30 +1259,23 @@
             } catch (err) {
                 knownDevices = [];
             }
-
             const prev = deviceSelect.value;
             deviceSelect.innerHTML = '';
             if (!knownDevices.length) {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '（未偵測到手機）';
-                deviceSelect.appendChild(opt);
-                activeUdid = null;
-                return;
+                const o = document.createElement('option');
+                o.value = ''; o.textContent = '（未偵測到手機）';
+                deviceSelect.appendChild(o);
+                activeUdid = null; return;
             }
-            const active = knownDevices.find(d => d.is_active) || knownDevices[0];
+            const active = knownDevices.find((d) => d.is_active) || knownDevices[0];
             activeUdid = active ? active.udid : null;
-            knownDevices.forEach(d => {
-                const opt = document.createElement('option');
-                opt.value = d.udid;
-                opt.textContent = displayNameFor(d);
-                deviceSelect.appendChild(opt);
+            knownDevices.forEach((d) => {
+                const o = document.createElement('option');
+                o.value = d.udid; o.textContent = displayNameFor(d);
+                deviceSelect.appendChild(o);
             });
-            if (prev && knownDevices.some(d => d.udid === prev)) {
-                deviceSelect.value = prev;
-            } else if (activeUdid) {
-                deviceSelect.value = activeUdid;
-            }
+            if (prev && knownDevices.some((d) => d.udid === prev)) deviceSelect.value = prev;
+            else if (activeUdid) deviceSelect.value = activeUdid;
         }
 
         deviceSelect.addEventListener('change', async () => {
@@ -1555,20 +1290,18 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '切換失敗');
                 activeUdid = udid;
-                setStatus(`已切換到裝置 ${displayNameFor(knownDevices.find(d => d.udid === udid) || { udid })}，請按「連線手機」`);
+                const name = displayNameFor(knownDevices.find((d) => d.udid === udid) || { udid });
+                pushToast(`已切換到裝置 ${name}，請按「連線手機」`, 'info');
                 await refreshSessionStatus();
             } catch (err) {
-                setStatus(`切換裝置失敗: ${err.message}`, true);
+                pushToast(`切換裝置失敗: ${err.message}`, 'error');
             }
         });
 
         renameDeviceBtn.addEventListener('click', async () => {
             const udid = deviceSelect.value;
-            if (!udid) {
-                setStatus('請先接上手機', true);
-                return;
-            }
-            const current = knownDevices.find(d => d.udid === udid);
+            if (!udid) { pushToast('請先接上手機', 'error'); return; }
+            const current = knownDevices.find((d) => d.udid === udid);
             const suggested = current && current.name ? current.name : '';
             const name = window.prompt('請輸入這台手機的名字', suggested);
             if (name === null) return;
@@ -1580,40 +1313,57 @@
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '命名失敗');
-                setStatus(`已命名為「${name.trim() || '(無)'}」`);
+                pushToast(`已命名為「${name.trim() || '(無)'}」`, 'ok');
                 await refreshDevices();
             } catch (err) {
-                setStatus(`命名失敗: ${err.message}`, true);
+                pushToast(`命名失敗: ${err.message}`, 'error');
             }
         });
 
+        // ---------- Movement status poll ----------
         async function pollMovementStatus() {
             try {
                 const res = await fetch('/api/movement-status');
                 const data = await res.json();
                 if (!res.ok) return;
-                if (data.current) {
-                    applyLocalPosition(data.current.lat, data.current.lng);
-                }
+                if (data.current) applyLocalPosition(data.current.lat, data.current.lng);
                 if (data.mode === 'idle' && routePlaybackActive) {
                     routePlaybackActive = false;
-                    updatePlaybackButtons();
+                    renderEasyBar();
                     clearSmoothVisuals();
-                    setStatus('路徑播放已完成');
+                    pushToast('路徑播放已完成', 'ok');
                 }
                 if (data.target && (data.mode === 'moving' || data.mode === 'playing_route')) {
                     updateSmoothVisuals(data.current || currentLatLng(), data.target);
                 } else if (data.mode === 'idle') {
                     clearSmoothVisuals();
                 }
-                if (data.last_error) {
-                    setStatus(`後端移動錯誤: ${data.last_error}`, true);
-                }
-            } catch (err) {
-                // silent
-            }
+                if (data.last_error) pushToast(`後端移動錯誤: ${data.last_error}`, 'error');
+            } catch (err) { /* silent */ }
         }
 
+        // ---------- Map state save ----------
+        map.on('moveend zoomend', scheduleSaveMapState);
+        window.addEventListener('beforeunload', flushSettingsOnLeave);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushSettingsOnLeave();
+        });
+
+        // ---------- Bootstrap ----------
+        async function bootstrap() {
+            renderEasyBar();
+            setInitialView(25.033964, 121.564468);
+            scheduleTimezoneRefresh(25.033964, 121.564468, { force: true, setAsBase: true });
+            renderOriginDisplay();
+            renderLocalTime();
+            pushToast('模式: 直接跳轉', 'info');
+            await loadSettings();
+            await initFromBrowserGps();
+        }
+        bootstrap();
+
+        refreshSessionStatus();
+        setInterval(refreshSessionStatus, 2000);
         refreshDevices();
         setInterval(refreshDevices, 5000);
         pollMovementStatus();

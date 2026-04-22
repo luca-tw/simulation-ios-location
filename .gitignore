@@ -52,3 +52,6 @@ Thumbs.db
 
 # Map state
 web_map_state.json
+
+# Documentation
+docs

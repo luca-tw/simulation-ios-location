@@ -2,7 +2,7 @@ import os
 
 from flask import Blueprint, jsonify, request
 
-from app.services import location, movement
+from app.services import geocode, location, movement
 from app.services.settings import SETTINGS_FILE, load_settings, merge_settings
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -191,6 +191,23 @@ def api_save_settings():
     except Exception as e:
         location.logger.error(f"儲存設定失敗: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@api_bp.get("/geocode")
+def api_geocode():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "q 為必填"}), 400
+    try:
+        limit = max(1, min(10, int(request.args.get("limit") or 5)))
+    except ValueError:
+        limit = 5
+    try:
+        results = geocode.geocode(q, limit=limit)
+        return jsonify({"results": results})
+    except Exception as e:
+        location.logger.error(f"地址查詢失敗: {e}")
+        return jsonify({"error": str(e)}), 502
 
 
 def safe_shutdown() -> None:
