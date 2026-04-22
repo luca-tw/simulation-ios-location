@@ -591,6 +591,13 @@
                     map.setView([center.lat, center.lng], Math.max(1, Math.min(20, zoom)), { animate: false });
                     setInputs(center.lat, center.lng);
                 }
+                if (appSettings.move_mode) {
+                    const opt = Array.from(moveModeEl.options).find(o => o.value === appSettings.move_mode);
+                    if (opt) {
+                        moveModeEl.value = appSettings.move_mode;
+                        moveModeEl.dispatchEvent(new Event('change'));
+                    }
+                }
                 if (appSettings.last_position) {
                     const p = appSettings.last_position;
                     if (!marker) marker = L.marker([p.lat, p.lng]).addTo(map);
@@ -1241,6 +1248,7 @@
                 const label = moveModeEl.options[moveModeEl.selectedIndex].text;
                 pushToast(`模式: ${label}`, 'info');
             }
+            saveSettingsPartial({ move_mode: v });
         });
 
         // ---------- Devices ----------

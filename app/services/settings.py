@@ -20,6 +20,7 @@ def default_settings() -> dict:
             "zoom": 12,
         },
         "last_position": None,
+        "move_mode": "instant",
         "favorites": [],
         "flower_spots": [],
         "saved_routes": [],
@@ -60,6 +61,10 @@ def sanitize_settings(raw: dict) -> dict:
                 settings["last_position"] = {"lat": lat, "lng": lng}
         except (TypeError, ValueError):
             pass
+
+    move_mode = raw.get("move_mode")
+    if isinstance(move_mode, str) and move_mode in {"instant", "walk", "bike", "scooter", "car", "hsr"}:
+        settings["move_mode"] = move_mode
 
     favorites = raw.get("favorites")
     if isinstance(favorites, list):
@@ -177,6 +182,8 @@ def merge_settings(update: dict) -> dict:
         current["map"] = update["map"]
     if "last_position" in update:
         current["last_position"] = update["last_position"]
+    if "move_mode" in update:
+        current["move_mode"] = update["move_mode"]
     if "favorites" in update and isinstance(update["favorites"], list):
         current["favorites"] = update["favorites"]
     if "flower_spots" in update and isinstance(update["flower_spots"], list):
