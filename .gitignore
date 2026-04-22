@@ -55,3 +55,7 @@ web_map_state.json
 
 # Documentation
 docs
+
+# Claude settings
+.claude
+
