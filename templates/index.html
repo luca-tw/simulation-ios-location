@@ -260,6 +260,9 @@
                 <span id="localTimeDisplay" class="pill translucent">
                     <span>🕐</span><span id="localTimeText">當地時間：--</span>
                 </span>
+                <span id="currentPosDisplay" class="pill translucent">
+                    <span>📌</span><span id="currentPosText" class="coord-mono">目前位置：--</span>
+                </span>
             </div>
             <input id="gpxFileInput" type="file" accept=".gpx,application/gpx+xml,text/xml,application/xml" style="display:none" />
             <div id="toasts" class="toasts"></div>
@@ -285,6 +288,7 @@
         const originText = document.getElementById('originText');
         const localTimeDisplay = document.getElementById('localTimeDisplay');
         const localTimeText = document.getElementById('localTimeText');
+        const currentPosText = document.getElementById('currentPosText');
         const toastsEl = document.getElementById('toasts');
         const gpxFileInput = document.getElementById('gpxFileInput');
 
@@ -603,6 +607,7 @@
                     const p = appSettings.last_position;
                     if (!marker) marker = L.marker([p.lat, p.lng]).addTo(map);
                     marker.setLatLng([p.lat, p.lng]);
+                    currentPosText.textContent = `目前位置：${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}`;
                     scheduleTimezoneRefresh(p.lat, p.lng);
                 }
                 return Boolean(data._persisted);
@@ -619,6 +624,7 @@
             map.setView([c.lat, c.lng], 16, { animate: false });
             if (!marker) marker = L.marker([c.lat, c.lng]).addTo(map);
             marker.setLatLng([c.lat, c.lng]);
+            currentPosText.textContent = `目前位置：${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
             scheduleTimezoneRefresh(c.lat, c.lng);
         }
 
@@ -696,7 +702,7 @@
         function applyLocalPosition(lat, lng) {
             if (!marker) marker = L.marker([lat, lng]).addTo(map);
             marker.setLatLng([lat, lng]);
-            setInputs(lat, lng);
+            currentPosText.textContent = `目前位置：${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
             if (followMode) map.panTo([lat, lng], { animate: false });
             scheduleTimezoneRefresh(lat, lng);
         }
