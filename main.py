@@ -1,6 +1,7 @@
 import atexit
 import logging
 import os
+import signal
 import sys
 import threading
 
@@ -19,10 +20,11 @@ def _run_shutdown_once():
     if _shutdown_done.is_set():
         return
     _shutdown_done.set()
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         safe_shutdown()
         logger.info("已完成關閉清理")
-    except Exception as e:
+    except BaseException as e:
         logger.error(f"結束前清理失敗: {e}")
 
 
