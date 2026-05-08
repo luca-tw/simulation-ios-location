@@ -134,8 +134,11 @@ class PersistentLocationSession:
         if udid:
             match = next((d for d in devices if d.serial == udid), None)
             if match is None:
-                raise RuntimeError(f"找不到指定的裝置 {udid}，請確認已連接並信任電腦。")
-            udid = match.serial
+                logger.warning(f"指定裝置 {udid} 未偵測到，改用第一台可用裝置")
+                merge_settings({"active_udid": None})
+                udid = devices[0].serial
+            else:
+                udid = match.serial
         else:
             udid = devices[0].serial
 
