@@ -330,6 +330,7 @@
         let activeUdid = null;
         let openPopover = null; // 'fav' | 'routes'
         let followMode = true;
+        let useRoadRouting = true;
         let appSettings = {
             map: { center: { lat: 25.033964, lng: 121.564468 }, zoom: 12 },
             last_position: null,
@@ -746,18 +747,62 @@
                 await sendLocation(clamp.lat, clamp.lng);
                 return;
             }
-            try {
-                const res = await fetch('/api/move', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lat: clamp.lat, lng: clamp.lng, mode }),
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || '移動失敗');
-                updateSmoothVisuals(currentLatLng(), { lat: clamp.lat, lng: clamp.lng });
-                pushToast(`後端移動中 → ${clamp.lat.toFixed(4)}, ${clamp.lng.toFixed(4)}（${moveModeEl.options[moveModeEl.selectedIndex].text}）`, 'info');
-            } catch (err) {
-                pushToast(`啟動移動失敗: ${err.message}`, 'error');
+
+            // Try to get a road route from OSRM via the backend (only if road routing is enabled)
+            const current = currentLatLng();
+            let roadPoints = null;
+            if (useRoadRouting) {
+                try {
+                    const routeRes = await fetch('/api/route', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            from_lat: current.lat, from_lng: current.lng,
+                            to_lat: clamp.lat, to_lng: clamp.lng,
+                            mode,
+                        }),
+                    });
+                    const routeData = await routeRes.json();
+                    if (routeRes.ok && Array.isArray(routeData.points) && routeData.points.length >= 2) {
+                        roadPoints = routeData.points;
+                    }
+                } catch (_) { /* fall through */ }
+            }
+
+            if (roadPoints) {
+                // Play along the road route
+                try {
+                    const res = await fetch('/api/play-route', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ points: roadPoints, mode }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '播放失敗');
+                    routePoints = roadPoints;
+                    updateRouteVisuals();
+                    routePlaybackActive = true;
+                    renderEasyBar();
+                    pushToast(`沿道路前往（${roadPoints.length} 點，${moveModeEl.options[moveModeEl.selectedIndex].text}）`, 'ok');
+                } catch (err) {
+                    pushToast(`沿路移動失敗: ${err.message}`, 'error');
+                }
+            } else {
+                // Straight-line movement (either user chose it, or road routing failed)
+                if (useRoadRouting) pushToast('無法取得道路路線，改走直線', 'info');
+                try {
+                    const res = await fetch('/api/move', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lat: clamp.lat, lng: clamp.lng, mode }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '移動失敗');
+                    updateSmoothVisuals(currentLatLng(), { lat: clamp.lat, lng: clamp.lng });
+                    pushToast(`後端移動中 → ${clamp.lat.toFixed(4)}, ${clamp.lng.toFixed(4)}（${moveModeEl.options[moveModeEl.selectedIndex].text}）`, 'info');
+                } catch (err) {
+                    pushToast(`啟動移動失敗: ${err.message}`, 'error');
+                }
             }
         }
 
@@ -927,6 +972,7 @@
             { key: 'save-origin', icon: '📍', title: '儲存原始位置' },
             { key: 'go-origin',   icon: '🏠', title: '回到原始位置' },
             { key: 'follow',      icon: '🎯', title: '跟隨目前位置' },
+            { key: 'routing',     icon: '🛤️', title: '沿道路移動（點擊切換道路/直線）' },
             { key: 'fav',         icon: '⭐', title: '收藏' },
             { key: 'routes',      icon: '🛣️', title: '路徑庫' },
             { key: 'draw',        icon: '✎',  title: '畫路徑' },
@@ -947,7 +993,8 @@
                     (it.key === 'play' && routePlaybackActive) ||
                     (it.key === 'fav' && openPopover === 'fav') ||
                     (it.key === 'routes' && openPopover === 'routes') ||
-                    (it.key === 'follow' && followMode);
+                    (it.key === 'follow' && followMode) ||
+                    (it.key === 'routing' && useRoadRouting);
                 if (isActive) b.classList.add('active');
                 b.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -999,6 +1046,10 @@
                 } else {
                     pushToast('已關閉跟隨目前位置', 'info');
                 }
+            } else if (key === 'routing') {
+                useRoadRouting = !useRoadRouting;
+                renderEasyBar();
+                pushToast(useRoadRouting ? '已切換為沿道路移動' : '已切換為直線移動', 'info');
             } else if (key === 'fav') {
                 togglePopover('fav');
             } else if (key === 'routes') {

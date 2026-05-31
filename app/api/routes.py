@@ -2,7 +2,7 @@ import os
 
 from flask import Blueprint, jsonify, request
 
-from app.services import geocode, location, movement
+from app.services import geocode, location, movement, routing
 from app.services.settings import SETTINGS_FILE, load_settings, merge_settings
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -191,6 +191,26 @@ def api_save_settings():
     except Exception as e:
         location.logger.error(f"儲存設定失敗: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@api_bp.post("/route")
+def api_get_route():
+    data = request.get_json(silent=True) or {}
+    try:
+        from_lat = float(data.get("from_lat"))
+        from_lng = float(data.get("from_lng"))
+        to_lat = float(data.get("to_lat"))
+        to_lng = float(data.get("to_lng"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "座標格式錯誤"}), 400
+
+    mode = str(data.get("mode") or "walk")
+    try:
+        points = routing.get_route(from_lat, from_lng, to_lat, to_lng, mode)
+        return jsonify({"ok": True, "points": points, "count": len(points)})
+    except Exception as e:
+        location.logger.error(f"路由查詢失敗: {e}")
+        return jsonify({"error": str(e)}), 502
 
 
 @api_bp.get("/geocode")
