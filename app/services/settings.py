@@ -22,7 +22,6 @@ def default_settings() -> dict:
         "last_position": None,
         "move_mode": "instant",
         "favorites": [],
-        "flower_spots": [],
         "saved_routes": [],
         "devices": {},
         "active_udid": None,
@@ -83,25 +82,6 @@ def sanitize_settings(raw: dict) -> dict:
             if -90 <= lat <= 90 and -180 <= lng <= 180:
                 cleaned.append({"name": name[:64], "lat": lat, "lng": lng})
         settings["favorites"] = cleaned[:100]
-
-    flower_spots = raw.get("flower_spots")
-    if isinstance(flower_spots, list):
-        cleaned_flowers = []
-        for item in flower_spots:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name", "")).strip() or "未命名花點"
-            color = str(item.get("color", "")).strip()
-            if not color or color not in ["blue", "red", "white", "yellow"]:
-                color = "red"  # Default fallback
-            try:
-                lat = float(item.get("lat"))
-                lng = float(item.get("lng"))
-            except (TypeError, ValueError):
-                continue
-            if -90 <= lat <= 90 and -180 <= lng <= 180:
-                cleaned_flowers.append({"name": name[:64], "lat": lat, "lng": lng, "color": color})
-        settings["flower_spots"] = cleaned_flowers[:200]
 
     saved_routes = raw.get("saved_routes")
     if isinstance(saved_routes, list):
@@ -186,8 +166,6 @@ def merge_settings(update: dict) -> dict:
         current["move_mode"] = update["move_mode"]
     if "favorites" in update and isinstance(update["favorites"], list):
         current["favorites"] = update["favorites"]
-    if "flower_spots" in update and isinstance(update["flower_spots"], list):
-        current["flower_spots"] = update["flower_spots"]
     if "saved_routes" in update and isinstance(update["saved_routes"], list):
         current["saved_routes"] = update["saved_routes"]
     if "devices" in update and isinstance(update["devices"], dict):

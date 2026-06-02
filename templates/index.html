@@ -219,6 +219,10 @@
 
         /* Markers */
         .coord-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+        svg { pointer-events: none; flex-shrink: 0; display: block; }
+        .btn svg, .icon-btn svg { display: block; }
+        .pill svg { display: inline-block; }
     </style>
 </head>
 <body>
@@ -238,12 +242,12 @@
                 <option value="hsr">高鐵 (230km/h)</option>
             </select>
             <button id="goBtn" class="btn" title="Enter">前往</button>
-            <button id="searchBtn" class="btn" title="地址搜尋">🔍 搜索</button>
+            <button id="searchBtn" class="btn" title="地址搜尋"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> 搜索</button>
             <div class="spacer"></div>
             <span class="pill">
-                <span>📱</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
                 <select id="deviceSelect" class="inner-select"><option value="">（未偵測到手機）</option></select>
-                <button id="renameDeviceBtn" class="icon-btn" title="重新命名">✏️</button>
+                <button id="renameDeviceBtn" class="icon-btn" title="重新命名"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
             </span>
             <span id="sessionPill" class="pill clickable" title="點擊連線或中斷">
                 <span id="sessionDot" class="dot"></span>
@@ -255,13 +259,13 @@
             <div id="popoverHost"></div>
             <div id="mapOverlay" class="map-overlay">
                 <span id="originDisplay" class="pill warn">
-                    <span>📍</span><span id="originText">尚未儲存原始位置</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><span id="originText">尚未儲存原始位置</span>
                 </span>
                 <span id="localTimeDisplay" class="pill translucent">
-                    <span>🕐</span><span id="localTimeText">當地時間：--</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span id="localTimeText">當地時間：--</span>
                 </span>
                 <span id="currentPosDisplay" class="pill translucent">
-                    <span>📌</span><span id="currentPosText" class="coord-mono">目前位置：--</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/></svg><span id="currentPosText" class="coord-mono">目前位置：--</span>
                 </span>
             </div>
             <input id="gpxFileInput" type="file" accept=".gpx,application/gpx+xml,text/xml,application/xml" style="display:none" />
@@ -968,16 +972,32 @@
         }
 
         // ---------- EasyBar ----------
+        const ICONS = {
+            'map-pin':    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+            'home':       `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+            'crosshair':  `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>`,
+            'route':      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>`,
+            'star':       `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+            'map':        `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg>`,
+            'pencil':     `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`,
+            'play':       `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>`,
+            'pause':      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>`,
+            'trash':      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>`,
+            'trash-sm':   `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>`,
+            'download':   `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>`,
+            'upload':     `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>`,
+        };
+
         const EASY_ITEMS = [
-            { key: 'save-origin', icon: '📍', title: '儲存原始位置' },
-            { key: 'go-origin',   icon: '🏠', title: '回到原始位置' },
-            { key: 'follow',      icon: '🎯', title: '跟隨目前位置' },
-            { key: 'routing',     icon: '🛤️', title: '沿道路移動（點擊切換道路/直線）' },
-            { key: 'fav',         icon: '⭐', title: '收藏' },
-            { key: 'routes',      icon: '🛣️', title: '路徑庫' },
-            { key: 'draw',        icon: '✎',  title: '畫路徑' },
-            { key: 'play',        icon: '▶',  title: '播放 / 暫停' },
-            { key: 'clear',       icon: '⌫',  title: '清空路徑' },
+            { key: 'save-origin', icon: 'map-pin',   title: '儲存原始位置' },
+            { key: 'go-origin',   icon: 'home',       title: '回到原始位置' },
+            { key: 'follow',      icon: 'crosshair',  title: '跟隨目前位置' },
+            { key: 'routing',     icon: 'route',      title: '沿道路移動（點擊切換道路/直線）' },
+            { key: 'fav',         icon: 'star',       title: '收藏' },
+            { key: 'routes',      icon: 'map',        title: '路徑庫' },
+            { key: 'draw',        icon: 'pencil',     title: '畫路徑' },
+            { key: 'play',        icon: 'play',       title: '播放 / 暫停' },
+            { key: 'clear',       icon: 'trash',      title: '清空路徑' },
         ];
 
         function renderEasyBar() {
@@ -987,7 +1007,7 @@
                 b.type = 'button';
                 b.title = it.title;
                 b.dataset.key = it.key;
-                b.textContent = (it.key === 'play' && routePlaybackActive) ? '⏸' : it.icon;
+                b.innerHTML = ICONS[(it.key === 'play' && routePlaybackActive) ? 'pause' : it.icon];
                 const isActive =
                     (it.key === 'draw' && drawRouteMode) ||
                     (it.key === 'play' && routePlaybackActive) ||
@@ -1099,12 +1119,12 @@
             root.className = 'popover';
             const items = appSettings.favorites || [];
             root.innerHTML = `
-                <div class="pop-head"><span>⭐ 收藏地點</span><button class="pop-close" aria-label="關閉">×</button></div>
+                <div class="pop-head"><span style="display:inline-flex;align-items:center;gap:5px">${ICONS['star'].replace('width="16" height="16"','width="14" height="14"')} 收藏地點</span><button class="pop-close" aria-label="關閉">×</button></div>
                 <select class="fav-select"><option value="">${items.length ? '選擇收藏…' : '尚無收藏'}</option></select>
                 <div class="grid2">
                     <button class="btn sm fav-go" disabled>前往</button>
                     <button class="btn sm secondary fav-save">收藏目前點</button>
-                    <button class="btn sm danger fav-del" disabled>🗑️ 刪除</button>
+                    <button class="btn sm danger fav-del" disabled style="display:inline-flex;align-items:center;gap:4px">${ICONS['trash-sm']} 刪除</button>
                     <div class="count">${items.length} 筆</div>
                 </div>
             `;
@@ -1155,17 +1175,17 @@
             root.className = 'popover';
             const items = appSettings.saved_routes || [];
             root.innerHTML = `
-                <div class="pop-head"><span>🛣️ 路徑庫</span><button class="pop-close" aria-label="關閉">×</button></div>
+                <div class="pop-head"><span style="display:inline-flex;align-items:center;gap:5px">${ICONS['map'].replace('width="16" height="16"','width="14" height="14"')} 路徑庫</span><button class="pop-close" aria-label="關閉">×</button></div>
                 <select class="route-select"><option value="">${items.length ? '選擇路徑…' : '尚無路徑'}</option></select>
                 <div class="grid2" style="margin-bottom:8px;">
                     <button class="btn sm route-load" disabled>載入</button>
                     <button class="btn sm secondary route-save">儲存目前路徑</button>
-                    <button class="btn sm danger route-del" disabled>🗑️ 刪除</button>
+                    <button class="btn sm danger route-del" disabled style="display:inline-flex;align-items:center;gap:4px">${ICONS['trash-sm']} 刪除</button>
                     <div class="count">${items.length} 筆</div>
                 </div>
                 <div class="divider grid2">
-                    <button class="btn sm ghost route-import">📥 匯入 GPX</button>
-                    <button class="btn sm ghost route-export">📤 匯出 GPX</button>
+                    <button class="btn sm ghost route-import" style="display:inline-flex;align-items:center;gap:4px">${ICONS['download']} 匯入 GPX</button>
+                    <button class="btn sm ghost route-export" style="display:inline-flex;align-items:center;gap:4px">${ICONS['upload']} 匯出 GPX</button>
                 </div>
             `;
             const sel = root.querySelector('.route-select');
