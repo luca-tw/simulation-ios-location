@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>iOS 即時定位地圖</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -56,7 +56,8 @@
         }
 
         html, body { height: 100%; margin: 0; background: var(--bg-gradient); color: var(--ink); font-family: var(--font-sans); font-size: 14px; -webkit-font-smoothing: antialiased; }
-        .wrap { display: flex; flex-direction: column; height: 100%; }
+        .wrap { display: flex; flex-direction: column; height: 100%; height: 100dvh; }
+        .top-main, .top-status { display: contents; }
 
         /* Top bar */
         .top {
@@ -223,12 +224,73 @@
         svg { pointer-events: none; flex-shrink: 0; display: block; }
         .btn svg, .icon-btn svg { display: block; }
         .pill svg { display: inline-block; }
+
+        /* ---------- Tablet / narrow desktop ---------- */
+        @media (max-width: 1240px) {
+            .top { flex-wrap: wrap; row-gap: 8px; }
+            .pill { white-space: nowrap; }
+        }
+
+        /* ---------- Mobile ---------- */
+        @media (max-width: 768px) {
+            .top {
+                flex-wrap: wrap; gap: 8px;
+                padding: 8px 10px;
+                padding-top: max(8px, env(safe-area-inset-top));
+                padding-left: max(10px, env(safe-area-inset-left));
+                padding-right: max(10px, env(safe-area-inset-right));
+            }
+            .title, .spacer { display: none; }
+            .top-status { display: flex; gap: 6px; width: 100%; min-width: 0; }
+            .top-status .pill:first-child { flex: 1; min-width: 0; }
+            .pill .inner-select { flex: 1; min-width: 0; max-width: none; font-size: 14px; }
+            .top-main { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; width: 100%; }
+            .top-main .input-wrap { grid-column: 1 / -1; }
+            /* 16px 避免 iOS Safari 聚焦時自動放大 */
+            input.coord-input, select.mode-select { width: 100%; box-sizing: border-box; font-size: 16px; min-height: 40px; }
+            .btn { min-height: 40px; padding: 8px 14px; font-size: 14px; justify-content: center; }
+            .btn.sm { min-height: 36px; font-size: 13px; }
+            .candidates { width: 100%; max-height: 50vh; overflow-y: auto; }
+            .candidate { padding: 10px 12px; }
+
+            .easybar {
+                flex-direction: row; gap: 2px;
+                left: 10px; right: 10px; top: auto; transform: none;
+                bottom: calc(22px + env(safe-area-inset-bottom));
+                overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+            }
+            .easybar::-webkit-scrollbar { display: none; }
+            .easybar button { flex: 1 0 36px; height: 40px; }
+
+            .map-overlay {
+                left: 10px; right: 10px;
+                bottom: calc(80px + env(safe-area-inset-bottom));
+                gap: 4px;
+            }
+            .map-overlay .pill { font-size: 11px; padding: 4px 8px; max-width: 100%; box-sizing: border-box; }
+
+            .popover {
+                left: 10px; right: 10px; top: auto; width: auto; transform: none;
+                bottom: calc(80px + env(safe-area-inset-bottom));
+                max-height: calc(100% - 100px); overflow-y: auto; box-sizing: border-box;
+                animation: sheetIn 200ms var(--ease-out);
+            }
+            .popover::before { display: none; }
+            .popover select { font-size: 16px; padding: 8px; }
+            .popover .pop-close { font-size: 22px; padding: 0 4px; }
+
+            .leaflet-control-zoom { display: none; }
+            .toasts { top: 10px; left: 10px; right: 10px; bottom: auto; max-width: none; align-items: stretch; }
+            .toast { min-width: 0; max-width: none; }
+        }
+        @keyframes sheetIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
     <div class="wrap">
         <div class="top">
             <div class="title">iOS 即時定位</div>
+            <div class="top-main">
             <div class="input-wrap">
                 <input id="coordTextInput" class="coord-input" type="text" placeholder="貼上經緯度 例如: 25.033964,121.564468，或輸入地址" autocomplete="off" />
                 <div id="candidates" class="candidates" style="display:none"></div>
@@ -243,7 +305,9 @@
             </select>
             <button id="goBtn" class="btn" title="Enter">前往</button>
             <button id="searchBtn" class="btn" title="地址搜尋"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> 搜索</button>
+            </div>
             <div class="spacer"></div>
+            <div class="top-status">
             <span class="pill">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
                 <select id="deviceSelect" class="inner-select"><option value="">（未偵測到手機）</option></select>
@@ -253,6 +317,7 @@
                 <span id="sessionDot" class="dot"></span>
                 <span id="sessionText">會話狀態：檢查中</span>
             </span>
+            </div>
         </div>
         <div id="map">
             <div id="easybar" class="easybar"></div>
@@ -409,14 +474,18 @@
         function getStepMeters() { return (currentSpeedKmh / 3.6) * (KEY_TICK_MS / 1000); }
 
         // ---------- Session pill ----------
+        const mobileMq = window.matchMedia('(max-width: 768px)');
+
         function setSessionState(connected, tunnelAlive) {
             sessionDot.classList.remove('ok', 'off');
+            const compact = mobileMq.matches;
             if (connected) {
                 sessionDot.classList.add('ok');
-                sessionText.textContent = tunnelAlive ? '會話已連線（Tunnel 活躍）· 中斷' : '會話已連線 · 中斷';
+                if (compact) sessionText.textContent = '已連線 · 中斷';
+                else sessionText.textContent = tunnelAlive ? '會話已連線（Tunnel 活躍）· 中斷' : '會話已連線 · 中斷';
             } else {
                 sessionDot.classList.add('off');
-                sessionText.textContent = '會話已斷線 · 點擊連線';
+                sessionText.textContent = compact ? '點擊連線' : '會話已斷線 · 點擊連線';
             }
         }
 
@@ -831,7 +900,7 @@
         }
 
         function hideCandidates() { candidatesEl.style.display = 'none'; }
-        document.addEventListener('mousedown', (e) => {
+        document.addEventListener('pointerdown', (e) => {
             if (!e.target.closest('#candidates') && !e.target.closest('.input-wrap')) hideCandidates();
         });
 
@@ -1101,7 +1170,7 @@
             renderEasyBar();
         }
 
-        document.addEventListener('mousedown', (e) => {
+        document.addEventListener('pointerdown', (e) => {
             if (!openPopover) return;
             if (e.target.closest('.popover') || e.target.closest('.easybar')) return;
             closePopover();

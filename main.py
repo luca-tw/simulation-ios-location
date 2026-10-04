@@ -2,6 +2,7 @@ import atexit
 import logging
 import os
 import signal
+import socket
 import sys
 import threading
 
@@ -14,6 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 _shutdown_done = threading.Event()
+
+
+def _lan_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return None
 
 
 def _run_shutdown_once():
@@ -40,6 +50,10 @@ if __name__ == "__main__":
     atexit.register(_run_shutdown_once)
     app = create_app()
     logger.info(f"Web 模式啟動: http://{host}:{port}")
+    if host in ("0.0.0.0", "::"):
+        lan_ip = _lan_ip()
+        if lan_ip:
+            logger.info(f"內網裝置可透過 http://{lan_ip}:{port} 存取")
     try:
         app.run(host=host, port=port, debug=False)
     except KeyboardInterrupt:

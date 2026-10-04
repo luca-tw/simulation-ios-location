@@ -4,16 +4,18 @@ PYTHON := ./$(VENV)/bin/python
 PORT ?= 8000
 URL = http://127.0.0.1:$(PORT)
 
-.PHONY: all run open dev clean
+.PHONY: all run lan open dev clean
 
 all: clean dev
 
 run:
-	sudo $(PYTHON) main.py
+	sudo SIMPLE_LOCATION_PORT=$(PORT) $(PYTHON) main.py
+lan:
+	sudo SIMPLE_LOCATION_HOST=0.0.0.0 SIMPLE_LOCATION_PORT=$(PORT) $(PYTHON) main.py
 open:
 	open $(URL)
 dev:
-	sudo $(PYTHON) main.py & ( sleep 5; open $(URL) ) 
+	sudo SIMPLE_LOCATION_PORT=$(PORT) $(PYTHON) main.py & ( sleep 5; open $(URL) ) 
 clean:
 	@pid=$$(sudo lsof -t -nP -iTCP:$(PORT) -sTCP:LISTEN); \
 	if [ -n "$$pid" ]; then \
