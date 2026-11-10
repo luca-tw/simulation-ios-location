@@ -21,6 +21,7 @@ def default_settings() -> dict:
         },
         "last_position": None,
         "move_mode": "instant",
+        "follow_mode": True,
         "favorites": [],
         "saved_routes": [],
         "devices": {},
@@ -64,6 +65,10 @@ def sanitize_settings(raw: dict) -> dict:
     move_mode = raw.get("move_mode")
     if isinstance(move_mode, str) and move_mode in {"instant", "walk", "bike", "scooter", "car", "hsr"}:
         settings["move_mode"] = move_mode
+
+    follow_mode = raw.get("follow_mode")
+    if isinstance(follow_mode, bool):
+        settings["follow_mode"] = follow_mode
 
     favorites = raw.get("favorites")
     if isinstance(favorites, list):
@@ -164,6 +169,8 @@ def merge_settings(update: dict) -> dict:
         current["last_position"] = update["last_position"]
     if "move_mode" in update:
         current["move_mode"] = update["move_mode"]
+    if "follow_mode" in update:
+        current["follow_mode"] = update["follow_mode"]
     if "favorites" in update and isinstance(update["favorites"], list):
         current["favorites"] = update["favorites"]
     if "saved_routes" in update and isinstance(update["saved_routes"], list):

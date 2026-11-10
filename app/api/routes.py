@@ -196,6 +196,28 @@ def api_save_settings():
 @api_bp.post("/route")
 def api_get_route():
     data = request.get_json(silent=True) or {}
+    mode = str(data.get("mode") or "walk")
+
+    raw_points = data.get("points")
+    if isinstance(raw_points, list):
+        waypoints = []
+        for p in raw_points[:2000]:
+            try:
+                lat, lng = float(p.get("lat")), float(p.get("lng"))
+            except (AttributeError, TypeError, ValueError):
+                return jsonify({"error": "座標格式錯誤"}), 400
+            if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                return jsonify({"error": "座標超出範圍"}), 400
+            waypoints.append({"lat": lat, "lng": lng})
+        if len(waypoints) < 2:
+            return jsonify({"error": "至少需要 2 個座標"}), 400
+        try:
+            points = routing.get_route_through(waypoints, mode)
+            return jsonify({"ok": True, "points": points, "count": len(points)})
+        except Exception as e:
+            location.logger.error(f"路由查詢失敗: {e}")
+            return jsonify({"error": str(e)}), 502
+
     try:
         from_lat = float(data.get("from_lat"))
         from_lng = float(data.get("from_lng"))
@@ -204,7 +226,6 @@ def api_get_route():
     except (TypeError, ValueError):
         return jsonify({"error": "座標格式錯誤"}), 400
 
-    mode = str(data.get("mode") or "walk")
     try:
         points = routing.get_route(from_lat, from_lng, to_lat, to_lng, mode)
         return jsonify({"ok": True, "points": points, "count": len(points)})
