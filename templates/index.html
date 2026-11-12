@@ -929,7 +929,11 @@
         });
 
         coordTextInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); goBtn.click(); }
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            // Skip the Enter that confirms an IME candidate (keyCode 229 covers Safari's out-of-order events)
+            if (e.isComposing || e.keyCode === 229) return;
+            goBtn.click();
         });
 
         searchBtn.addEventListener('click', async () => {
