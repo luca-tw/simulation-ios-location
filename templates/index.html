@@ -409,7 +409,7 @@
         let routePlaybackIndex = 0;
         let knownDevices = [];
         let activeUdid = null;
-        let openPopover = null; // 'fav' | 'routes'
+        let openPopover = null; // 'fav' | 'routes' | 'play'
         let followMode = true;
         let useRoadRouting = true;
         let coordsSortByNearest = false;
@@ -1025,7 +1025,7 @@
             if (showToast) pushToast('已停止路徑播放', 'ok');
         }
 
-        async function startRoutePlayback() {
+        async function startRoutePlayback(startFrom = 'start') {
             if (routePoints.length < 2) { pushToast('請先畫至少 2 個路徑點才能播放', 'error'); return; }
             drawRouteMode = false;
             const mode = moveModeEl.value === 'instant' ? 'walk' : moveModeEl.value;
@@ -1033,13 +1033,13 @@
                 const res = await fetch('/api/play-route', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ points: routePoints, mode }),
+                    body: JSON.stringify({ points: routePoints, mode, start_from: startFrom }),
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '啟動播放失敗');
                 routePlaybackActive = true;
                 renderEasyBar();
-                pushToast(`後端沿路徑播放中（${routePoints.length} 點，模式 ${mode}）— 關掉網頁仍會繼續`, 'info');
+                pushToast(`後端沿路徑播放中（${startFrom === 'nearest' ? '從最近點' : '從頭'}，${routePoints.length} 點，模式 ${mode}）— 關掉網頁仍會繼續`, 'info');
             } catch (err) {
                 pushToast(`啟動路徑播放失敗: ${err.message}`, 'error');
             }
@@ -1100,7 +1100,7 @@
                 b.innerHTML = ICONS[(it.key === 'play' && routePlaybackActive) ? 'pause' : it.icon];
                 const isActive =
                     (it.key === 'draw' && drawRouteMode) ||
-                    (it.key === 'play' && routePlaybackActive) ||
+                    (it.key === 'play' && (routePlaybackActive || openPopover === 'play')) ||
                     (it.key === 'fav' && openPopover === 'fav') ||
                     (it.key === 'routes' && openPopover === 'routes') ||
                     (it.key === 'follow' && followMode) ||
@@ -1171,7 +1171,8 @@
                 pushToast(drawRouteMode ? '路徑繪製模式：點地圖可新增路徑點' : '已離開路徑繪製模式', 'info');
             } else if (key === 'play') {
                 if (routePlaybackActive) { await stopRoutePlayback(); clearSmoothVisuals(); }
-                else await startRoutePlayback();
+                else if (routePoints.length < 2) pushToast('請先畫至少 2 個路徑點才能播放', 'error');
+                else togglePopover('play');
             } else if (key === 'clear') {
                 await clearRoute();
                 pushToast('路徑已清空', 'info');
@@ -1203,6 +1204,43 @@
             if (!openPopover) return;
             if (openPopover === 'fav') popoverHost.appendChild(buildFavPopover());
             else if (openPopover === 'routes') popoverHost.appendChild(buildRoutesPopover());
+            else if (openPopover === 'play') popoverHost.appendChild(buildPlayPopover());
+        }
+
+        // 目前位置到路徑（折線）最近距離，公尺；與後端 _nearest_on_route 同樣的近似
+        function distanceToRouteM(p, pts) {
+            const cosLat = Math.cos(p.lat * Math.PI / 180);
+            const M_PER_DEG = 111320;
+            let best = Infinity;
+            for (let i = 0; i < pts.length - 1; i++) {
+                const ax = (pts[i].lng - p.lng) * cosLat, ay = pts[i].lat - p.lat;
+                const bx = (pts[i + 1].lng - p.lng) * cosLat, by = pts[i + 1].lat - p.lat;
+                const dx = bx - ax, dy = by - ay;
+                const len2 = dx * dx + dy * dy;
+                const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2));
+                const d = Math.hypot(ax + dx * t, ay + dy * t) * M_PER_DEG;
+                if (d < best) best = d;
+            }
+            return best;
+        }
+
+        function buildPlayPopover() {
+            const root = document.createElement('div');
+            root.className = 'popover';
+            const d = distanceToRouteM(currentLatLng(), routePoints);
+            const dText = !Number.isFinite(d) ? '' : (d >= 1000 ? `${(d / 1000).toFixed(2)} km` : `${Math.round(d)} m`);
+            root.innerHTML = `
+                <div class="pop-head"><span style="display:inline-flex;align-items:center;gap:5px">${ICONS['play'].replace('width="16" height="16"','width="14" height="14"')} 播放路徑</span><button class="pop-close" aria-label="關閉">×</button></div>
+                <div class="coords-hint">${routePoints.length} 點${dText ? `，目前位置距路徑 ${dText}` : ''}</div>
+                <div class="grid2">
+                    <button class="btn sm play-start">從頭開始</button>
+                    <button class="btn sm secondary play-nearest">從最近點開始</button>
+                </div>
+            `;
+            root.querySelector('.play-start').addEventListener('click', async () => { closePopover(); await startRoutePlayback('start'); });
+            root.querySelector('.play-nearest').addEventListener('click', async () => { closePopover(); await startRoutePlayback('nearest'); });
+            root.querySelector('.pop-close').addEventListener('click', closePopover);
+            return root;
         }
 
         function buildFavPopover() {

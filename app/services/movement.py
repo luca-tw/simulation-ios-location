@@ -40,6 +40,29 @@ def _step_toward(lat: float, lng: float, target_lat: float, target_lng: float, s
     return lat + (target_lat - lat) * ratio, lng + (target_lng - lng) * ratio, False
 
 
+def _nearest_on_route(lat: float, lng: float, points: list) -> tuple:
+    """回傳 (segment_index, proj_lat, proj_lng, distance_m)：目前位置投影到路徑上最近的點。
+
+    segment_index i 代表最近點落在 points[i] -> points[i+1] 這段上。
+    使用以目前位置為原點的等距圓柱近似，短距離足夠精確。
+    """
+    cos_lat = math.cos(math.radians(lat))
+    best = None
+    for i in range(len(points) - 1):
+        a, b = points[i], points[i + 1]
+        ax, ay = (a["lng"] - lng) * cos_lat, a["lat"] - lat
+        bx, by = (b["lng"] - lng) * cos_lat, b["lat"] - lat
+        dx, dy = bx - ax, by - ay
+        seg_len2 = dx * dx + dy * dy
+        t = 0.0 if seg_len2 == 0 else max(0.0, min(1.0, -(ax * dx + ay * dy) / seg_len2))
+        p_lat = a["lat"] + (b["lat"] - a["lat"]) * t
+        p_lng = a["lng"] + (b["lng"] - a["lng"]) * t
+        d = _haversine_m(lat, lng, p_lat, p_lng)
+        if best is None or d < best[3]:
+            best = (i, p_lat, p_lng, d)
+    return best
+
+
 class _MovementState:
     def __init__(self) -> None:
         self.mode: str = "idle"  # idle | moving | playing_route
@@ -124,7 +147,7 @@ async def _run_move_to(target_lat: float, target_lng: float, move_type: str) -> 
         _state.mode = "idle"
 
 
-async def _run_play_route(points: list, move_type: str) -> None:
+async def _run_play_route(points: list, move_type: str, entry_point: dict = None) -> None:
     speed = _speed_mps(move_type)
     last = time.monotonic()
 
@@ -141,7 +164,13 @@ async def _run_play_route(points: list, move_type: str) -> None:
 
     try:
         while _state.route_index < len(points):
-            target = points[_state.route_index]
+            if entry_point is not None:
+                # 先走到路徑上最近的投影點，再沿路徑繼續
+                target, entry_point = entry_point, None
+                is_entry = True
+            else:
+                target = points[_state.route_index]
+                is_entry = False
             target_lat, target_lng = target["lat"], target["lng"]
             _state.target_lat, _state.target_lng = target_lat, target_lng
 
@@ -161,7 +190,8 @@ async def _run_play_route(points: list, move_type: str) -> None:
                 if arrived:
                     break
 
-            _state.route_index += 1
+            if not is_entry:
+                _state.route_index += 1
 
         _state.mode = "idle"
         _state.target_lat = None
@@ -194,13 +224,20 @@ async def _start_move_coro(lat: float, lng: float, move_type: str) -> None:
     _state.task = asyncio.create_task(_run_move_to(lat, lng, move_type))
 
 
-async def _start_route_coro(points: list, move_type: str) -> None:
+async def _start_route_coro(points: list, move_type: str, start_from: str = "start") -> None:
     await _cancel_current_task()
     _state.last_error = None
     _state.move_type = move_type
     _state.route_points = points
     _state.route_index = 0
     _state.mode = "playing_route"
+
+    entry_point = None
+    if start_from == "nearest" and _state.current_lat is not None:
+        seg_i, p_lat, p_lng, dist = _nearest_on_route(_state.current_lat, _state.current_lng, points)
+        logger.info(f"從路徑最近點開始: segment {seg_i}, 距離 {dist:.1f}m")
+        _state.route_index = seg_i + 1
+        entry_point = {"lat": p_lat, "lng": p_lng}
 
     if move_type == "instant":
         if points:
@@ -212,7 +249,7 @@ async def _start_route_coro(points: list, move_type: str) -> None:
         _state.mode = "idle"
         return
 
-    _state.task = asyncio.create_task(_run_play_route(points, move_type))
+    _state.task = asyncio.create_task(_run_play_route(points, move_type, entry_point))
 
 
 async def _stop_coro() -> None:
@@ -247,9 +284,11 @@ def start_move(lat: float, lng: float, move_type: str) -> dict:
     return _state.snapshot()
 
 
-def start_route(points: list, move_type: str) -> dict:
+def start_route(points: list, move_type: str, start_from: str = "start") -> dict:
     if move_type not in ("instant",) and move_type not in SPEED_KMH:
         raise ValueError(f"不支援的移動模式: {move_type}")
+    if start_from not in ("start", "nearest"):
+        raise ValueError(f"不支援的起點模式: {start_from}")
     cleaned = []
     for p in points or []:
         try:
@@ -258,7 +297,7 @@ def start_route(points: list, move_type: str) -> dict:
             continue
     if len(cleaned) < 2:
         raise ValueError("路徑至少需要 2 個點")
-    location._run_async(_start_route_coro(cleaned, move_type))
+    location._run_async(_start_route_coro(cleaned, move_type, start_from))
     return _state.snapshot()
 
 

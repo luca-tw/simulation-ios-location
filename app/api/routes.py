@@ -56,11 +56,12 @@ def api_play_route():
     data = request.get_json(silent=True) or {}
     points = data.get("points")
     mode = str(data.get("mode") or "walk")
+    start_from = str(data.get("start_from") or "start")
     if not isinstance(points, list):
         return jsonify({"error": "points 必須為陣列"}), 400
 
     try:
-        status = movement.start_route(points, mode)
+        status = movement.start_route(points, mode, start_from)
         return jsonify({"ok": True, **status})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
